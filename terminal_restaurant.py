@@ -33,7 +33,8 @@ game_data: dict = {
     "stock" : {
         "recipe_book" : {
             "display_name" : "Buku Resep",
-            "amount" : 1
+            "amount" : 1,
+            "capacity_type" : "quantity"
         },
         "beras" : {
             "display_name" : "Beras",
@@ -56,6 +57,7 @@ game_data: dict = {
             "display_name" : "Nasi",
             "description" : "Makanan wajib orang Asia.",
             "amount" : 1.5,
+            "time" : 2,
             "material" : {
                  "beras" : {
                     "display_name" : "Beras",
@@ -69,9 +71,10 @@ game_data: dict = {
             "display_name" : "Nasi Goreng",
             "description" : "Beras yang direbus, kemudian digoreng.",
             "amount" : 1,
+            "time" : 1,
             "material" : {
-                "beras" : {
-                    "display_name" : "Beras",
+                "nasi" : {
+                    "display_name" : "Nasi",
                     "amount" : 0.1,
                     "capacity_type" : "rice_capacity"
                 },
@@ -85,47 +88,50 @@ game_data: dict = {
                     "amount": 7,
                     "capacity_type" : "kecap"
                 }
-            }
+            },
+            "capacity_type" : "quantity"
+        }
+    },
+    "market" : {
+        "beras" : {
+            "display_name" : "Beras",
+            "amount" : 1,
+            "capacity_type" : "rice_capacity",
+            "cost" : 20000,
+            "type" : TYPE_INGREDIENT
+        },
+        "rempah" : {
+            "display_name" : "Rempah-Rempah",
+            "amount" : 0.1,
+            "capacity_type" : "spice_capacity",
+            "cost" : 10000,
+            "type" : TYPE_INGREDIENT
+        },
+        "chef" : {
+            "display_name" : "Chef",
+            "cost" : 250000,
+            "type" : TYPE_WORKER
+        },
+        "cashier" : {
+            "display_name" : "Kasir",
+            "cost" : 500000,
+            "type" : TYPE_WORKER
+        },
+        "chicken_recipe" : {
+            "display_name" : "Resep Nasi Ayam",
+            "cost" : 100000,
+            "type" : TYPE_RECIPE
+        },
+        "chicken" : {
+            "display_name" : "Ayam",
+            "amount" : 1,
+            "capacity_type" : "quantity",
+            "cost" : 10000,
+            "type" : TYPE_INGREDIENT
         }
     }
 }
 turn = -1
-market: dict = {
-    "beras" : {
-        "display_name" : "Beras",
-        "quantity" : 1,
-        "capacity_type" : "rice_capacity",
-        "cost" : 20000,
-        "type" : TYPE_INGREDIENT
-    },
-    "rempah" : {
-        "display_name" : "Rempah-Rempah",
-        "quantity" : 0.1,
-        "capacity_type" : "spice_capacity",
-        "cost" : 10000,
-        "type" : TYPE_INGREDIENT
-    },
-    "chef" : {
-        "display_name" : "Chef",
-        "cost" : 250000,
-        "type" : TYPE_WORKER
-    },
-    "cashier" : {
-        "display_name" : "Kasir",
-        "cost" : 500000,
-        "type" : TYPE_WORKER
-    },
-    "chicken_recipe" : {
-        "display_name" : "Resep Nasi Ayam",
-        "cost" : 100000,
-        "type" : TYPE_RECIPE
-    },
-    "chicken" : {
-        "display_name" : "Ayam",
-        "cost" : 10000,
-        "type" : TYPE_INGREDIENT
-    }
-}
 
 
 # Function declaration >III<
@@ -149,7 +155,11 @@ def stock() -> None:
     pass
 def get_unit_formatted(amount: int, capacity_type: str) -> str:
     pass
+def money_format(num: int) -> str:
+    pass
 def recipe() -> None:
+    pass
+def market() -> None:
     pass
 
 
@@ -213,12 +223,16 @@ def load_game_data() -> int:
                 return LOAD_CORRUPTED
 
 
+def money_format(num: int) -> str:
+    return ("{:,}".format(num)).replace(",", ".")
+
+
 def game() -> None:
     while True:
         print(
 f"""
 Turn: {"FREE" if turn == -1 else turn}/24
-Money: {("{:,}".format(game_data["money"])).replace(",", ".")}
+Money: {money_format(game_data["money"])}
 1 - {"Mulai hari" if turn == -1 else "Tunggu(-1 TURN)"}
 2 - Meja Kasir
 3 - Cek Pekerja
@@ -231,10 +245,32 @@ Money: {("{:,}".format(game_data["money"])).replace(",", ".")}
             pass
         elif pilihan == 3:
             worker()
+        elif pilihan == 4:
+            market()
         elif pilihan == 5:
             stock()
         elif pilihan == 6:
             return
+
+
+def market() -> None:
+    while True:
+        market_items = list(game_data["market"].keys())
+        print("\n$$$ MARKET $$$")
+        for i in range(len(market_items)):
+            item = game_data['market'][market_items[i]]
+            item_type = item['type']
+            if item_type == TYPE_INGREDIENT:
+                print(f"{i + 1} - {item['display_name']} {get_unit_formatted(item['amount'], item['capacity_type'], False)}: {money_format(item['cost'])}")
+            elif item_type == TYPE_WORKER or item_type == TYPE_RECIPE:
+                print(f"{i + 1} - {item['display_name']}: {money_format(item['cost'])}")
+        print(f"{len(market_items) + 1} - Back")
+        pilihan = input_int_in_range("Masukkan pilihan: ", 1, len(market_items) + 1)
+        if pilihan == len(market_items) + 1:
+            return
+        else:
+            pass
+        
 
 
 def stock() -> None:
@@ -242,12 +278,6 @@ def stock() -> None:
         print("\n/||STOCK||\\")
         length: int = 0
         for i in game_data["stock"].keys():
-            if not "capacity_type" in game_data["stock"][i].keys():
-                display_text: str = f"{game_data['stock'][i]['display_name']}: x{game_data['stock'][i]['amount']}" 
-                print(display_text)
-                if len(display_text) > length:
-                    length = len(display_text)
-                continue
             display_text: str = f"{game_data['stock'][i]['display_name']}: {get_unit_formatted(game_data['stock'][i]['amount'], game_data['stock'][i]['capacity_type'])}" 
             print(display_text)
             if len(display_text) > length:
@@ -280,15 +310,19 @@ def recipe() -> None:
 f"""
 {selected_recipe["display_name"]}
 {"=" * (len(selected_recipe["display_name"]) + 1)}
-Hasil: {get_unit_formatted(selected_recipe["amount"], selected_recipe["capacity_type"], False) if "capacity_type" in selected_recipe.keys() else f"x{selected_recipe['amount']}"}
+Deskripsi: {selected_recipe["description"]}
+Hasil: {get_unit_formatted(selected_recipe["amount"], selected_recipe["capacity_type"], False)}
 Bahan-Bahan:"""
         )
         for i in recipe_material:
             print(f"- {recipe_material[i]['display_name']}: {get_unit_formatted(recipe_material[i]['amount'], recipe_material[i]['capacity_type'], False)}")
+        print(f"Waktu: {selected_recipe['time']}x Kecepatan Memasak")
         input("Enter...")
 
 
 def get_unit_formatted(amount: int, capacity_type: str, use_ratio: bool = True) -> str:
+    if capacity_type == "quantity":
+        return f"x{amount}"
     if capacity_type == "kecap" and type(amount) == str:
         return f"UNLIMITED"
     if capacity_type == "kecap":
@@ -327,7 +361,7 @@ f"""
 {worker.capitalize()}
 {"=" * len(worker) * 2}
 Deskripsi: {game_data["worker"][worker]["description"]}
-Kecepatan memasak: {game_data["worker"][worker]["speed"]} TURN
+Kecepatan Memasak: {game_data["worker"][worker]["speed"]} TURN
 Status: {"Tidur" if status == WORKER_STATUS_SLEEPING else ("Menunggu perintah" if status == WORKER_STATUS_WAITING_FOR_COMMAND else "Memasak")}
 {"=" * len(worker) * 2}"""
         )
