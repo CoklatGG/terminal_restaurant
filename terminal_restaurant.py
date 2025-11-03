@@ -161,6 +161,8 @@ def recipe() -> None:
     pass
 def market() -> None:
     pass
+def market_item_inspect(item: str) -> None:
+    pass
 
 
 # Function definiton ^_^
@@ -256,7 +258,12 @@ Money: {money_format(game_data["money"])}
 def market() -> None:
     while True:
         market_items = list(game_data["market"].keys())
-        print("\n$$$ MARKET $$$")
+        print(
+f"""
+$$$ MARKET $$$
+==============
+Money: {money_format(game_data["money"])}"""
+        )
         for i in range(len(market_items)):
             item = game_data['market'][market_items[i]]
             item_type = item['type']
@@ -269,8 +276,36 @@ def market() -> None:
         if pilihan == len(market_items) + 1:
             return
         else:
-            pass
+            market_item_inspect(market_items[pilihan - 1])
         
+
+def market_item_inspect(item: str) -> None:
+    count: int = 1
+    while True:
+        market_item = game_data["market"][item]
+        display_text = f'{market_item["display_name"]} {get_unit_formatted(market_item["amount"], market_item["capacity_type"], False) if (market_item["type"] == TYPE_INGREDIENT and not market_item["capacity_type"] == "quantity") else ""} x{count}'
+        length = len(display_text)
+        display_cost = f'Harga: {money_format(market_item["cost"] * count)}'
+        if len(display_cost) > length:
+            length = len(display_cost)
+        print(
+f"""
+=={"=" * length}==
+| {display_text}{" " * (length - len(display_text))} |
+| {display_cost}{" " * (length - len(display_cost))} |
+=={"=" * length}==
+1 - Beli
+2 - Ubah Jumlah
+3 - Back"""
+        )
+        pilihan = input_int_in_range("Masukkan pilihan: ", 1, 2)
+        if pilihan == 1:
+            pass
+        elif pilihan == 2:
+            count = input_safe_int("Masukkan jumlah: ")
+        elif pilihan == 3:
+            return
+
 
 
 def stock() -> None:
@@ -379,7 +414,6 @@ Status: {"Tidur" if status == WORKER_STATUS_SLEEPING else ("Menunggu perintah" i
                 continue
             game_data["worker"].pop(worker)
             return
-
 
 
 def option() -> None:
