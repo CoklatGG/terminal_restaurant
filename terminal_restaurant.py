@@ -10,6 +10,8 @@ LOAD_CORRUPT_RESET = 3
 WORKER_STATUS_SLEEPING = 0
 WORKER_STATUS_WAITING_FOR_COMMAND = 1
 WORKER_STATUS_WORKING = 2
+WORKER_TYPE_CHEF = 0
+WORKER_TYPE_CASHIER = 0
 TYPE_INGREDIENT = 0
 TYPE_WORKER = 1
 TYPE_RECIPE = 2
@@ -19,6 +21,8 @@ game_data: dict = {
     "option" : {
         "satuan" : KG
     },
+    "chef" : 1,
+    "cashier" : 0,
     "worker" : {
         "chef#1" : {
             "description" : "Teman terbaikmu sejauh ini.",
@@ -110,17 +114,51 @@ game_data: dict = {
         "chef" : {
             "display_name" : "Chef",
             "cost" : 250000,
-            "type" : TYPE_WORKER
+            "type" : TYPE_WORKER,
+            "item_data" : {
+                "description" : "Chef yang kamu beli online.",
+                "speed" : 2,
+                "status" : WORKER_STATUS_SLEEPING
+            }
         },
         "cashier" : {
             "display_name" : "Kasir",
             "cost" : 500000,
-            "type" : TYPE_WORKER
+            "type" : TYPE_WORKER,
+            "item_data" : {
+                "description" : "Kasir yang kamu beli online.",
+                "speed" : 2,
+                "status" : WORKER_STATUS_SLEEPING
+            }
         },
         "chicken_recipe" : {
-            "display_name" : "Resep Nasi Ayam",
+            "display_name" : "Resep Nasi Ayam Kecap",
             "cost" : 100000,
-            "type" : TYPE_RECIPE
+            "type" : TYPE_RECIPE,
+            "item_data" : {
+                "display_name" : "Nasi Ayam Kecap",
+                "description" : "Nasi ayam yang dikecapkan... atau kecap ayam yang dinasikan?",
+                "amount" : 1,
+                "time" : 1,
+                "material" : {
+                    "nasi" : {
+                        "display_name" : "Nasi",
+                        "amount" : 0.1,
+                        "capacity_type" : "rice_capacity"
+                    },
+                    "rempah" : {
+                        "display_name" : "Rempah-Rempah",
+                        "amount": 0.01,
+                        "capacity_type" : "spice_capacity"
+                    },
+                    "kecap" : {
+                        "display_name" : "Kecap",
+                        "amount": 5,
+                        "capacity_type" : "kecap"
+                    }
+                },
+                "capacity_type" : "quantity"
+            }
         },
         "chicken" : {
             "display_name" : "Ayam",
@@ -283,26 +321,59 @@ def market_item_inspect(item: str) -> None:
     count: int = 1
     while True:
         market_item = game_data["market"][item]
+        cost = market_item["cost"] * count
         display_text = f'{market_item["display_name"]} {get_unit_formatted(market_item["amount"], market_item["capacity_type"], False) if (market_item["type"] == TYPE_INGREDIENT and not market_item["capacity_type"] == "quantity") else ""} x{count}'
         length = len(display_text)
-        display_cost = f'Harga: {money_format(market_item["cost"] * count)}'
+        display_cost = f'Harga: {money_format(cost)}'
         if len(display_cost) > length:
             length = len(display_cost)
         print(
 f"""
+Money: {money_format(game_data["money"])}
 =={"=" * length}==
 | {display_text}{" " * (length - len(display_text))} |
 | {display_cost}{" " * (length - len(display_cost))} |
 =={"=" * length}==
-1 - Beli
-2 - Ubah Jumlah
-3 - Back"""
+1 - Beli"""
         )
-        pilihan = input_int_in_range("Masukkan pilihan: ", 1, 2)
+        if not market_item["type"] == TYPE_RECIPE:
+            print("2 - Ubah Jumlah")
+            print("3 - Back")
+        else:
+            print("2 - Back")
+        pilihan = input_int_in_range("Masukkan pilihan: ", 1, 3)
         if pilihan == 1:
-            pass
+            if game_data["money"] < cost:
+                print("Uang tidak cukup.")
+                input("Enter...")
+                return
+            game_data["money"] -= cost
+            if market_item["type"] == TYPE_INGREDIENT:
+                if not (item in game_data["stock"].keys()):
+                    game_data["stock"][item] = {
+                        "display_name" : market_item["display_name"],
+                        "amount" : count * market_item["amount"],
+                        "capacity_type" : market_item["capacity_type"]
+                    }
+                    return
+                if market_item["capacity_type"] == "quantity":
+                    game_data["stock"][item]["amount"] += count
+                    return
+                game_data["stock"][item]["amount"] = min(game_data["stock"][item]["amount"] + (count * market_item["amount"]), game_data[market_item["capacity_type"]]) 
+                return
+            elif market_item["type"] == TYPE_RECIPE:
+                game_data["recipe"][item] = market_item["item_data"]
+                game_data["market"].pop(item)
+                return
+            elif market_item["type"] == TYPE_WORKER:
+                for i in range(count):
+                    game_data[item] += 1
+                    game_data["worker"][f"{item}#{game_data[item]}"] = market_item["item_data"]
+                return
         elif pilihan == 2:
-            count = input_safe_int("Masukkan jumlah: ")
+            if market_item["type"] == TYPE_RECIPE:
+                return
+            count = int(max(min(input_safe_int("Masukkan jumlah: "), (game_data["money"] - (game_data["money"] % market_item["cost"])) / market_item["cost"]), 1))
         elif pilihan == 3:
             return
 
