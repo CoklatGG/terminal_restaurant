@@ -11,7 +11,7 @@ WORKER_STATUS_SLEEPING = 0
 WORKER_STATUS_WAITING_FOR_COMMAND = 1
 WORKER_STATUS_WORKING = 2
 WORKER_TYPE_CHEF = 0
-WORKER_TYPE_CASHIER = 0
+WORKER_TYPE_CASHIER = 1
 TYPE_INGREDIENT = 0
 TYPE_WORKER = 1
 TYPE_RECIPE = 2
@@ -27,7 +27,8 @@ game_data: dict = {
         "chef#1" : {
             "description" : "Teman terbaikmu sejauh ini.",
             "speed" : 1,
-            "status" : WORKER_STATUS_SLEEPING
+            "status" : WORKER_STATUS_SLEEPING,
+            "type" : WORKER_TYPE_CHEF
         },
     },
     "cooked_rice_capacity" : 1.5,
@@ -118,7 +119,8 @@ game_data: dict = {
             "item_data" : {
                 "description" : "Chef yang kamu beli online.",
                 "speed" : 2,
-                "status" : WORKER_STATUS_SLEEPING
+                "status" : WORKER_STATUS_SLEEPING,
+                "type" : WORKER_TYPE_CHEF
             }
         },
         "cashier" : {
@@ -128,7 +130,8 @@ game_data: dict = {
             "item_data" : {
                 "description" : "Kasir yang kamu beli online.",
                 "speed" : 2,
-                "status" : WORKER_STATUS_SLEEPING
+                "status" : WORKER_STATUS_SLEEPING,
+                "type" : WORKER_TYPE_CASHIER
             }
         },
         "chicken_recipe" : {
@@ -170,7 +173,12 @@ game_data: dict = {
     }
 }
 turn = -1
+kitchen: dict = {
+    "nasi" : 0,
+    "food_ready" : {
 
+    }
+}
 
 # Function declaration >III<
 def input_safe_int(text: str) -> int:
@@ -200,6 +208,8 @@ def recipe() -> None:
 def market() -> None:
     pass
 def market_item_inspect(item: str) -> None:
+    pass
+def kitchen() -> None:
     pass
 
 
@@ -275,22 +285,40 @@ Turn: {"FREE" if turn == -1 else turn}/24
 Money: {money_format(game_data["money"])}
 1 - {"Mulai hari" if turn == -1 else "Tunggu(-1 TURN)"}
 2 - Meja Kasir
-3 - Cek Pekerja
-4 - Market
-5 - Stok
-6 - Main menu"""
+3 - Dapur
+4 - Cek Pekerja
+5 - Market
+6 - Stok
+7 - Main menu"""
         )
         pilihan = input_int_in_range("Masukkan pilihan: ", 1, 6)
         if pilihan == 1:
             pass
         elif pilihan == 3:
-            worker()
+            kitchen()
         elif pilihan == 4:
-            market()
+            worker()
         elif pilihan == 5:
-            stock()
+            market()
         elif pilihan == 6:
+            stock()
+        elif pilihan == 7:
             return
+
+
+def kitchen() -> None:
+    print(
+f"""
+/~| Dapur |~\\
+Nasi: {get_unit_formatted(kitchen["nasi"], "cooked_rice_capacity")}
+{'''1 - Masak
+2 - Suruh Masak
+3 - Cek Makanan''' if turn > -1 else "1 - Cek Makanan"}
+{"4 - Back" if turn > -1 else "2 - Back"}"""
+    )
+
+
+# def 
 
 
 def market() -> None:
@@ -376,7 +404,6 @@ Money: {money_format(game_data["money"])}
             count = int(max(min(input_safe_int("Masukkan jumlah: "), (game_data["money"] - (game_data["money"] % market_item["cost"])) / market_item["cost"]), 1))
         elif pilihan == 3:
             return
-
 
 
 def stock() -> None:
@@ -467,7 +494,7 @@ f"""
 {worker.capitalize()}
 {"=" * len(worker) * 2}
 Deskripsi: {game_data["worker"][worker]["description"]}
-Kecepatan Memasak: {game_data["worker"][worker]["speed"]} TURN
+{"Kecepatan Memasak" if game_data["worker"][worker]["type"] == WORKER_TYPE_CHEF else "Kecepatan Melayani"}: {game_data["worker"][worker]["speed"]} TURN
 Status: {"Tidur" if status == WORKER_STATUS_SLEEPING else ("Menunggu perintah" if status == WORKER_STATUS_WAITING_FOR_COMMAND else "Memasak")}
 {"=" * len(worker) * 2}"""
         )
@@ -479,7 +506,11 @@ Status: {"Tidur" if status == WORKER_STATUS_SLEEPING else ("Menunggu perintah" i
         if pilihan == 2:
             return
         elif pilihan == 1:
-            if not len(game_data["worker"].keys()) > 1:
+            chef_count: int = 0
+            for i in game_data["worker"].keys():
+                if game_data["worker"][i]["type"] == WORKER_TYPE_CHEF:
+                    chef_count += 1
+            if not chef_count > 1:
                 print("Tidak bisa memecat chef jika chef hanya 1.")
                 input("Enter...")
                 continue
@@ -518,4 +549,3 @@ f"""
 if __name__ == "__main__":
     if not load_game_data() == LOAD_CORRUPTED:
         main_menu()
-    
