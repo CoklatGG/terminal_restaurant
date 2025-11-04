@@ -173,10 +173,10 @@ game_data: dict = {
     }
 }
 turn = -1
-kitchen: dict = {
+kitchen_data: dict = {
     "nasi" : 0,
     "food_ready" : {
-
+        
     }
 }
 
@@ -211,9 +211,18 @@ def market_item_inspect(item: str) -> None:
     pass
 def kitchen() -> None:
     pass
+def find_in_list(l: list) -> int:
+    pass
 
 
 # Function definiton ^_^
+def find_in_list(l: list, value) -> int:
+    if not value in l:
+        return -1
+    return l.index(value)
+
+
+
 def input_safe_int(text: str) -> int:
     while True:
         try:
@@ -278,31 +287,34 @@ def money_format(num: int) -> str:
 
 
 def game() -> None:
+    menu_list: list
+    if turn == -1:
+        menu_list = ['Meja Kasir', 'Cek Pekerja', 'Furnitur', 'Market', 'Stok', 'Main Menu']
+    else:
+        menu_list = ['Meja Kasir', 'Dapur', 'Cek Pekerja', 'Furnitur', 'Market', 'Stok', 'Main Menu']
+
+
     while True:
         print(
 f"""
 Turn: {"FREE" if turn == -1 else turn}/24
 Money: {money_format(game_data["money"])}
-1 - {"Mulai hari" if turn == -1 else "Tunggu(-1 TURN)"}
-2 - Meja Kasir
-3 - Dapur
-4 - Cek Pekerja
-5 - Market
-6 - Stok
-7 - Main menu"""
+1 - {"Mulai hari" if turn == -1 else "Tunggu(-1 TURN)"}"""
         )
-        pilihan = input_int_in_range("Masukkan pilihan: ", 1, 6)
+        for i in range(len(menu_list)):
+            print(f"{i + 2} - {menu_list[i]}")
+        pilihan = input_int_in_range("Masukkan pilihan: ", 1, 7)
         if pilihan == 1:
             pass
-        elif pilihan == 3:
+        elif pilihan == find_in_list(menu_list, "Dapur") + 2:
             kitchen()
-        elif pilihan == 4:
+        elif pilihan == find_in_list(menu_list, "Cek Pekerja") + 2:
             worker()
-        elif pilihan == 5:
+        elif pilihan == find_in_list(menu_list, "Market") + 2:
             market()
-        elif pilihan == 6:
+        elif pilihan == find_in_list(menu_list, "Stok") + 2:
             stock()
-        elif pilihan == 7:
+        elif pilihan == find_in_list(menu_list, "Main Menu") + 2:
             return
 
 
@@ -310,12 +322,13 @@ def kitchen() -> None:
     print(
 f"""
 /~| Dapur |~\\
-Nasi: {get_unit_formatted(kitchen["nasi"], "cooked_rice_capacity")}
-{'''1 - Masak
+Nasi: {get_unit_formatted(kitchen_data["nasi"], "cooked_rice_capacity")}
+1 - Masak
 2 - Suruh Masak
-3 - Cek Makanan''' if turn > -1 else "1 - Cek Makanan"}
-{"4 - Back" if turn > -1 else "2 - Back"}"""
+3 - Cek Makanan
+4 - Back"""
     )
+
 
 
 # def 
