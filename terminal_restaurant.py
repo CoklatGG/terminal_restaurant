@@ -15,6 +15,9 @@ WORKER_TYPE_CASHIER = 1
 TYPE_INGREDIENT = 0
 TYPE_WORKER = 1
 TYPE_RECIPE = 2
+ACTION_TYPE_CUSTOMER_LEAVE = 0
+ACTION_TYPE_FOOD_READY = 1
+ACTION_TYPE_CUSTOMER_SERVED = 2
 game_data: dict = {
     "day" : 0,
     "money" : 125000,
@@ -112,6 +115,20 @@ game_data: dict = {
             "cost" : 10000,
             "type" : TYPE_INGREDIENT
         },
+        "table" : {
+            "display_name" : "Meja",
+            "amount" : 1,
+            "capacity_type" : "quantity",
+            "cost" : 75000,
+            "type" : TYPE_INGREDIENT
+        },
+        "chair" : {
+            "display_name" : "Kursi",
+            "amount" : 1,
+            "capacity_type" : "quantity",
+            "cost" : 50000,
+            "type" : TYPE_INGREDIENT
+        },
         "chef" : {
             "display_name" : "Chef",
             "cost" : 250000,
@@ -170,7 +187,17 @@ game_data: dict = {
             "cost" : 10000,
             "type" : TYPE_INGREDIENT
         }
+    },
+    "furniture" : {
+        "table" : 0,
+        "chair" : 0
     }
+}
+process_action: dict = {
+
+}
+customer: dict = {
+    
 }
 turn = -1
 kitchen_data: dict = {
@@ -179,6 +206,10 @@ kitchen_data: dict = {
         
     }
 }
+table: dict = {
+    
+}
+
 
 # Function declaration >III<
 def input_safe_int(text: str) -> int:
@@ -212,6 +243,10 @@ def market_item_inspect(item: str) -> None:
 def kitchen() -> None:
     pass
 def find_in_list(l: list) -> int:
+    pass
+def furniture() -> None:
+    pass
+def update_table() -> None:
     pass
 
 
@@ -287,13 +322,12 @@ def money_format(num: int) -> str:
 
 
 def game() -> None:
+    update_table()
     menu_list: list
     if turn == -1:
         menu_list = ['Meja Kasir', 'Cek Pekerja', 'Furnitur', 'Market', 'Stok', 'Main Menu']
     else:
-        menu_list = ['Meja Kasir', 'Dapur', 'Cek Pekerja', 'Furnitur', 'Market', 'Stok', 'Main Menu']
-
-
+        menu_list = ['Meja Kasir', 'Dapur', 'Cek Pekerja', 'Market', 'Stok', 'Main Menu']
     while True:
         print(
 f"""
@@ -312,27 +346,118 @@ Money: {money_format(game_data["money"])}
             worker()
         elif pilihan == find_in_list(menu_list, "Market") + 2:
             market()
+        elif pilihan == find_in_list(menu_list, "Furnitur") + 2:
+            furniture()
         elif pilihan == find_in_list(menu_list, "Stok") + 2:
             stock()
         elif pilihan == find_in_list(menu_list, "Main Menu") + 2:
             return
 
 
+def update_table() -> str:
+    table.clear()
+    table_count: int = game_data["furniture"]["table"]
+    chair_count: int = game_data["furniture"]["chair"]
+    for i in range(game_data["furniture"]["table"]):
+        if not chair_count > 0:
+            continue
+        table_count -= 1
+        if not (chair_count - 2) < 0:
+            table[f"table{i}"] = {
+                "capacity" : 2
+            }
+            chair_count -= 2
+            continue
+        table[f"table{i}"] = {
+            "capacity" : 1
+        }
+        chair_count -= 1
+    if game_data["furniture"]["table"] == 0 and 0 == game_data["furniture"]["chair"]:
+        return "Belum ada meja dan kursi."
+    if table_count > chair_count:
+        return f"Meja tanpa kursi: {table_count}"
+    if table_count < chair_count:
+        return f"Kursi tanpa meja: {chair_count}"
+    return "Meja dan kursi tertata dengan rapi."
+
+
+def furniture() -> None:
+    while True:
+        menu_list: list = []
+        if "table" in game_data["stock"]:
+            menu_list.append("Tambahkan Meja")
+        if "chair" in game_data["stock"]:
+            menu_list.append("Tambahkan Kursi")
+        if game_data["furniture"]["table"] > 0:
+            menu_list.append("Kurangi Meja")
+        if game_data["furniture"]["chair"] > 0:
+            menu_list.append("Kurangi Kursi")
+        menu_list.append("Back")
+        calculation_result = update_table()
+        furnitures = list(table.keys())
+        print("\n_-% Furniture %-_")
+        for i in range(len(furnitures)):
+            print(f"- Meja#{i + 1}: {table[furnitures[i]]["capacity"]} kursi")
+        print(calculation_result)
+        print("^" * (len(calculation_result) + 1))
+        for i in range(len(menu_list)):
+            print(f"{i + 1} - {menu_list[i]}")
+        pilihan = input_int_in_range("Masukkan pilihan: ", 1, 5)
+        if pilihan == find_in_list(menu_list, "Tambahkan Meja") + 1:
+            print(f"\nMeja di stok: {get_unit_formatted(game_data["stock"]["table"]["amount"], game_data["stock"]["table"]["capacity_type"])}")
+            jumlah = min(max(input_safe_int("Masukkan jumlah: "), 0), game_data["stock"]["table"]["amount"])
+            game_data["stock"]["table"]["amount"] -= jumlah
+            game_data["furniture"]["table"] += jumlah
+            if game_data["stock"]["table"]["amount"] <= 0:
+                game_data["stock"].pop("table")
+        elif pilihan == find_in_list(menu_list, "Tambahkan Kursi") + 1:
+            print(f"\nKursi di stok: {get_unit_formatted(game_data["stock"]["chair"]["amount"], game_data["stock"]["chair"]["capacity_type"])}")
+            jumlah = min(max(input_safe_int("Masukkan jumlah: "), 0), game_data["stock"]["chair"]["amount"])
+            game_data["stock"]["chair"]["amount"] -= jumlah
+            game_data["furniture"]["chair"] += jumlah
+            if game_data["stock"]["chair"]["amount"] <= 0:
+                game_data["stock"].pop("chair")
+        elif pilihan == find_in_list(menu_list, "Kurangi Meja") + 1:
+            jumlah = min(max(input_safe_int("Masukkan jumlah: "), 0), game_data["furniture"]["table"])
+            game_data["furniture"]["table"] -= jumlah
+            if not "table" in game_data["stock"]:
+                game_data["stock"]["table"] = {
+                    "display_name" : "Meja",
+                    "amount" : 0,
+                    "capacity_type" : "quantity"
+                }
+            game_data["stock"]["table"]["amount"] += jumlah
+        elif pilihan == find_in_list(menu_list, "Kurangi Kursi") + 1:
+            jumlah = min(max(input_safe_int("Masukkan jumlah: "), 0), game_data["furniture"]["chair"])
+            game_data["furniture"]["chair"] -= jumlah
+            if not "chair" in game_data["stock"]:
+                game_data["stock"]["chair"] = {
+                    "display_name" : "Kursi",
+                    "amount" : 0,
+                    "capacity_type" : "quantity"
+                }
+            game_data["stock"]["chair"]["amount"] += jumlah
+        elif pilihan == find_in_list(menu_list, "Back") + 1:
+            return
+
+
 def kitchen() -> None:
-    print(
-f"""
-/~| Dapur |~\\
-Nasi: {get_unit_formatted(kitchen_data["nasi"], "cooked_rice_capacity")}
-1 - Masak
-2 - Suruh Masak
-3 - Cek Makanan
-4 - Back"""
-    )
-
-
-
-# def 
-
+    while True:
+        print(
+    f"""
+    /~| Dapur |~\\
+    Nasi: {get_unit_formatted(kitchen_data["nasi"], "cooked_rice_capacity")}
+    1 - Masak
+    2 - Suruh Masak
+    3 - Cek Makanan
+    4 - Back"""
+        )
+        pilihan = input_int_in_range("Masukkan pilihan: ", 1, 4)
+        if pilihan == 1:
+            pass
+        elif pilihan == 4:
+            return
+    
 
 def market() -> None:
     while True:
