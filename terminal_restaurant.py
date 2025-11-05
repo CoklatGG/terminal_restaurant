@@ -1,4 +1,5 @@
 import json
+from time import sleep, time
 
 G = 0
 KG = 1
@@ -59,6 +60,16 @@ game_data: dict = {
             "amount": "UNLIMITED",
             "capacity_type" : "kecap"
         },
+        "table" : {
+            "display_name" : "Meja",
+            "amount": 1,
+            "capacity_type" : "quantity"
+        },
+        "chair" : {
+            "display_name" : "Kursi",
+            "amount": 1,
+            "capacity_type" : "quantity"
+        },
     },
     "recipe" : {
         "nasi" : {
@@ -66,6 +77,7 @@ game_data: dict = {
             "description" : "Makanan wajib orang Asia.",
             "amount" : 1.5,
             "time" : 2,
+            "cost" : 2500,
             "material" : {
                  "beras" : {
                     "display_name" : "Beras",
@@ -80,6 +92,7 @@ game_data: dict = {
             "description" : "Beras yang direbus, kemudian digoreng.",
             "amount" : 1,
             "time" : 1,
+            "cost" : 10000,
             "material" : {
                 "nasi" : {
                     "display_name" : "Nasi",
@@ -160,6 +173,7 @@ game_data: dict = {
                 "description" : "Nasi ayam yang dikecapkan... atau kecap ayam yang dinasikan?",
                 "amount" : 1,
                 "time" : 1,
+                "cost" : 15000,
                 "material" : {
                     "nasi" : {
                         "display_name" : "Nasi",
@@ -175,6 +189,11 @@ game_data: dict = {
                         "display_name" : "Kecap",
                         "amount": 5,
                         "capacity_type" : "kecap"
+                    },
+                    "chicken" : {
+                        "display_name" : "Ayam",
+                        "amount": 1,
+                        "capacity_type" : "quantity"
                     }
                 },
                 "capacity_type" : "quantity"
@@ -193,7 +212,8 @@ game_data: dict = {
         "chair" : 0
     }
 }
-process_action: dict = {
+pendapatan: list = []
+action_timer: dict = {
 
 }
 customer: dict = {
@@ -248,6 +268,14 @@ def furniture() -> None:
     pass
 def update_table() -> None:
     pass
+def day_start() -> None:
+    pass
+def day_end() -> None:
+    pass
+def decrease_turn(by: int) -> None:
+    pass
+def do_action(action: dict) -> None:
+    pass
 
 
 # Function definiton ^_^
@@ -255,7 +283,6 @@ def find_in_list(l: list, value) -> int:
     if not value in l:
         return -1
     return l.index(value)
-
 
 
 def input_safe_int(text: str) -> int:
@@ -323,14 +350,15 @@ def money_format(num: int) -> str:
 
 def game() -> None:
     update_table()
-    menu_list: list
-    if turn == -1:
-        menu_list = ['Meja Kasir', 'Cek Pekerja', 'Furnitur', 'Market', 'Stok', 'Main Menu']
-    else:
-        menu_list = ['Meja Kasir', 'Dapur', 'Cek Pekerja', 'Market', 'Stok', 'Main Menu']
     while True:
+        menu_list: list
+        if turn == -1:
+            menu_list = ['Meja Kasir', 'Cek Pekerja', 'Furnitur', 'Market', 'Stok', 'Main Menu']
+        else:
+            menu_list = ['Meja Kasir', 'Dapur', 'Cek Pekerja', 'Market', 'Stok', 'Main Menu']
         print(
 f"""
+*-====DAY {game_data["day"]}====-*
 Turn: {"FREE" if turn == -1 else turn}/24
 Money: {money_format(game_data["money"])}
 1 - {"Mulai hari" if turn == -1 else "Tunggu(-1 TURN)"}"""
@@ -339,7 +367,9 @@ Money: {money_format(game_data["money"])}
             print(f"{i + 2} - {menu_list[i]}")
         pilihan = input_int_in_range("Masukkan pilihan: ", 1, 7)
         if pilihan == 1:
-            pass
+            if not turn == -1:
+                continue
+            day_start()
         elif pilihan == find_in_list(menu_list, "Dapur") + 2:
             kitchen()
         elif pilihan == find_in_list(menu_list, "Cek Pekerja") + 2:
@@ -352,6 +382,65 @@ Money: {money_format(game_data["money"])}
             stock()
         elif pilihan == find_in_list(menu_list, "Main Menu") + 2:
             return
+
+
+def day_end() -> None:
+    action_timer.clear()
+    for w in game_data["worker"]:
+        game_data["worker"][w]["status"] = WORKER_STATUS_SLEEPING
+
+
+def decrease_turn(by: int) -> None:
+    if not by > 0:
+        return
+    turn -= 1
+    if turn <= 0:
+        day_end()
+        return
+    actions = action_timer.keys()
+    for a in actions:
+        action_timer[a]["time"] -= 1
+        if action_timer[a]["time"] <= 0:
+            do_action(action_timer[a])
+        action_timer.pop(a)
+    decrease_turn(by - 1)
+
+
+def do_action(action: dict) -> None:
+    action_data = action["action_data"]
+    if action["type"] == ACTION_TYPE_FOOD_READY:
+        game_data["worker"][action_data["chef"]]["status"] = WORKER_STATUS_WAITING_FOR_COMMAND
+        if action_data["food"] == "nasi":
+            kitchen_data["nasi"] = min(game_data["cooked_rice_capacity"], kitchen_data["nasi"] + action_data["food_data"]["amount"])
+            update_nasi()
+            return
+        if not action_data["food"] in kitchen_data["food_ready"]:
+            kitchen_data["food_ready"][action_data["food"]] = {
+                "display_name" : action_data["food_data"]["display_name"],
+                "amount" : action_data["food_data"]["amount"]
+            }
+            return
+        return
+
+
+def day_start() -> None:
+    global turn
+    turn = 24
+    game_data["day"] += 1
+    for w in game_data["worker"]:
+        game_data["worker"][w]["status"] = WORKER_STATUS_WAITING_FOR_COMMAND
+
+
+def update_nasi() -> None:
+    if kitchen_data["nasi"] <= 0:
+        kitchen_data["nasi"] = 0
+        if "nasi" in kitchen_data["food_ready"]:
+            kitchen_data["food_ready"].pop("nasi")
+        return
+    kitchen_data["food_ready"]["nasi"] = {
+        "display_name" : "Sepiring Nasi",
+        "amount" : (kitchen_data["nasi"] - (kitchen_data["nasi"] % 100)) / 100
+    }
 
 
 def update_table() -> str:
@@ -443,18 +532,28 @@ def furniture() -> None:
 
 def kitchen() -> None:
     while True:
+        update_nasi()
         print(
-    f"""
-    /~| Dapur |~\\
-    Nasi: {get_unit_formatted(kitchen_data["nasi"], "cooked_rice_capacity")}
-    1 - Masak
-    2 - Suruh Masak
-    3 - Cek Makanan
-    4 - Back"""
+f"""
+/~| Dapur |~\\
+Nasi: {get_unit_formatted(kitchen_data["nasi"], "cooked_rice_capacity")}
+1 - Masak
+2 - Suruh Masak
+3 - Cek Makanan
+4 - Back"""
         )
         pilihan = input_int_in_range("Masukkan pilihan: ", 1, 4)
         if pilihan == 1:
             pass
+        elif pilihan == 3:
+            if len(kitchen_data["food_ready"]) <= 0:
+                print("\nBelum ada makanan yang siap.")
+                input("Enter...")
+                continue
+            print("\n~~/Makanan Siap\~~")
+            for m in kitchen_data["food_ready"]:
+                print(f"- {kitchen_data['food_ready'][m]["display_name"]}: {kitchen_data["food_ready"][m]["amount"]}")
+            input("Enter...")
         elif pilihan == 4:
             return
     
@@ -583,6 +682,7 @@ f"""
 {"=" * (len(selected_recipe["display_name"]) + 1)}
 Deskripsi: {selected_recipe["description"]}
 Hasil: {get_unit_formatted(selected_recipe["amount"], selected_recipe["capacity_type"], False)}
+Harga: {money_format(selected_recipe["cost"])}
 Bahan-Bahan:"""
         )
         for i in recipe_material:
