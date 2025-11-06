@@ -276,6 +276,8 @@ def decrease_turn(by: int) -> None:
     pass
 def do_action(action: dict) -> None:
     pass
+def command_cook(chef: str) -> None:
+    pass
 
 
 # Function definiton ^_^
@@ -420,6 +422,7 @@ def do_action(action: dict) -> None:
                 "amount" : action_data["food_data"]["amount"]
             }
             return
+        kitchen_data["food_ready"][action_data["food"]]["amount"] += action_data["food_data"]["amount"]
         return
 
 
@@ -486,21 +489,21 @@ def furniture() -> None:
         furnitures = list(table.keys())
         print("\n_-% Furniture %-_")
         for i in range(len(furnitures)):
-            print(f"- Meja#{i + 1}: {table[furnitures[i]]["capacity"]} kursi")
+            print(f"- Meja#{i + 1}: {table[furnitures[i]]['capacity']} kursi")
         print(calculation_result)
         print("^" * (len(calculation_result) + 1))
         for i in range(len(menu_list)):
             print(f"{i + 1} - {menu_list[i]}")
         pilihan = input_int_in_range("Masukkan pilihan: ", 1, 5)
         if pilihan == find_in_list(menu_list, "Tambahkan Meja") + 1:
-            print(f"\nMeja di stok: {get_unit_formatted(game_data["stock"]["table"]["amount"], game_data["stock"]["table"]["capacity_type"])}")
+            print(f"\nMeja di stok: {get_unit_formatted(game_data['stock']['table']['amount'], game_data['stock']['table']['capacity_type'])}")
             jumlah = min(max(input_safe_int("Masukkan jumlah: "), 0), game_data["stock"]["table"]["amount"])
             game_data["stock"]["table"]["amount"] -= jumlah
             game_data["furniture"]["table"] += jumlah
             if game_data["stock"]["table"]["amount"] <= 0:
                 game_data["stock"].pop("table")
         elif pilihan == find_in_list(menu_list, "Tambahkan Kursi") + 1:
-            print(f"\nKursi di stok: {get_unit_formatted(game_data["stock"]["chair"]["amount"], game_data["stock"]["chair"]["capacity_type"])}")
+            print(f"\nKursi di stok: {get_unit_formatted(game_data['stock']['chair']['amount'], game_data['stock']['chair']['capacity_type'])}")
             jumlah = min(max(input_safe_int("Masukkan jumlah: "), 0), game_data["stock"]["chair"]["amount"])
             game_data["stock"]["chair"]["amount"] -= jumlah
             game_data["furniture"]["chair"] += jumlah
@@ -545,6 +548,17 @@ Nasi: {get_unit_formatted(kitchen_data["nasi"], "cooked_rice_capacity")}
         pilihan = input_int_in_range("Masukkan pilihan: ", 1, 4)
         if pilihan == 1:
             pass
+        elif pilihan == 2:
+            chef_available: bool = False
+            for w in game_data["worker"]:
+                if game_data["worker"][w]["type"] == WORKER_TYPE_CHEF and game_data["worker"][w]["status"] == WORKER_STATUS_WAITING_FOR_COMMAND:
+                    command_cook(w)
+                    chef_available = True
+                    break
+            if chef_available:
+                continue
+            print("Semua chef sedang sibuk.")
+            input("Enter...")
         elif pilihan == 3:
             if len(kitchen_data["food_ready"]) <= 0:
                 print("\nBelum ada makanan yang siap.")
@@ -552,11 +566,28 @@ Nasi: {get_unit_formatted(kitchen_data["nasi"], "cooked_rice_capacity")}
                 continue
             print("\n~~/Makanan Siap\~~")
             for m in kitchen_data["food_ready"]:
-                print(f"- {kitchen_data['food_ready'][m]["display_name"]}: {kitchen_data["food_ready"][m]["amount"]}")
+                print(f"- {kitchen_data['food_ready'][m]['display_name']}: {kitchen_data['food_ready'][m]['amount']}")
             input("Enter...")
         elif pilihan == 4:
             return
-    
+
+
+def command_cook(chef: str) -> None:
+    recipes = list(game_data["recipe"])
+    print("\n+~Masakan~+")
+    for f in range(len(recipes)):
+        ingredients: str = ""
+        for i in game_data["recipe"][recipes[f]]["material"]:
+            ingredients += f"{get_unit_formatted(game_data['recipe'][recipes[f]]['material'][i]['amount'], game_data['recipe'][recipes[f]]['material'][i]['capacity_type'], False)} {game_data['recipe'][recipes[f]]['material'][i]['display_name']}, "
+        ingredients += f"{game_data['recipe'][recipes[f]]['time']} TURN"
+        print(f"{f + 1} - {game_data['recipe'][recipes[f]]['display_name']}: {ingredients}")
+    print(f"{len(recipes) + 1} - Cancel")
+    pilihan = input_int_in_range("Masukkan pilihan: ", 1, len(recipes) + 1)
+    if pilihan == len(recipes) + 1:
+        return
+    else:
+        action_id = int(time())
+                
 
 def market() -> None:
     while True:
