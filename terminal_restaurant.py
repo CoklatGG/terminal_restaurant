@@ -370,6 +370,7 @@ Money: {money_format(game_data["money"])}
         pilihan = input_int_in_range("Masukkan pilihan: ", 1, 7)
         if pilihan == 1:
             if not turn == -1:
+                decrease_turn(1)
                 continue
             day_start()
         elif pilihan == find_in_list(menu_list, "Dapur") + 2:
@@ -393,17 +394,19 @@ def day_end() -> None:
 
 
 def decrease_turn(by: int) -> None:
+    global turn
     if not by > 0:
         return
     turn -= 1
     if turn <= 0:
         day_end()
         return
-    actions = action_timer.keys()
+    actions = list(action_timer.keys())
     for a in actions:
         action_timer[a]["time"] -= 1
-        if action_timer[a]["time"] <= 0:
-            do_action(action_timer[a])
+        if not action_timer[a]["time"] <= 0:
+            continue
+        do_action(action_timer[a])
         action_timer.pop(a)
     decrease_turn(by - 1)
 
@@ -564,7 +567,7 @@ Nasi: {get_unit_formatted(kitchen_data["nasi"], "cooked_rice_capacity")}
                 print("\nBelum ada makanan yang siap.")
                 input("Enter...")
                 continue
-            print("\n~~/Makanan Siap\~~")
+            print("\n~~/Makanan Siap\\~~")
             for m in kitchen_data["food_ready"]:
                 print(f"- {kitchen_data['food_ready'][m]['display_name']}: {kitchen_data['food_ready'][m]['amount']}")
             input("Enter...")
@@ -573,21 +576,46 @@ Nasi: {get_unit_formatted(kitchen_data["nasi"], "cooked_rice_capacity")}
 
 
 def command_cook(chef: str) -> None:
-    recipes = list(game_data["recipe"])
-    print("\n+~Masakan~+")
-    for f in range(len(recipes)):
-        ingredients: str = ""
-        for i in game_data["recipe"][recipes[f]]["material"]:
-            ingredients += f"{get_unit_formatted(game_data['recipe'][recipes[f]]['material'][i]['amount'], game_data['recipe'][recipes[f]]['material'][i]['capacity_type'], False)} {game_data['recipe'][recipes[f]]['material'][i]['display_name']}, "
-        ingredients += f"{game_data['recipe'][recipes[f]]['time']} TURN"
-        print(f"{f + 1} - {game_data['recipe'][recipes[f]]['display_name']}: {ingredients}")
-    print(f"{len(recipes) + 1} - Cancel")
-    pilihan = input_int_in_range("Masukkan pilihan: ", 1, len(recipes) + 1)
-    if pilihan == len(recipes) + 1:
-        return
-    else:
-        action_id = int(time())
-                
+    while True:
+        recipes = list(game_data["recipe"].keys())
+        print("\n+~Masakan~+")
+        for f in range(len(recipes)):
+            ingredients: str = ""
+            for i in game_data["recipe"][recipes[f]]["material"]:
+                ingredients += f"{get_unit_formatted(game_data['recipe'][recipes[f]]['material'][i]['amount'], game_data['recipe'][recipes[f]]['material'][i]['capacity_type'], False)} {game_data['recipe'][recipes[f]]['material'][i]['display_name']}, "
+            ingredients += f"{game_data['recipe'][recipes[f]]['time']} TURN"
+            print(f"{f + 1} - {game_data['recipe'][recipes[f]]['display_name']}: {ingredients}")
+        print(f"{len(recipes) + 1} - Cancel")
+        pilihan = input_int_in_range("Masukkan pilihan: ", 1, len(recipes) + 1)
+        material_available: bool = True
+        if pilihan == len(recipes) + 1:
+            return
+        else:
+            for m in game_data["recipe"][recipes[pilihan - 1]]["material"]:
+                if game_data["stock"][m]["amount"] < game_data["recipe"][recipes[pilihan - 1]]["material"][m]["amount"]:
+                    print("Bahan-Bahan kurang.")
+                    input("Enter...")
+                    material_available = False
+                    break
+            if not material_available:
+                continue
+            action_id = hex(int(time()))
+            game_data["worker"][chef]["action"] = action_id
+            game_data["worker"][chef]["status"] = WORKER_STATUS_WORKING
+            action_timer[action_id] = {
+                "type" : ACTION_TYPE_FOOD_READY,
+                "time" : game_data["recipe"][recipes[pilihan - 1]]["time"],
+                "action_data" : {
+                    "chef" : chef,
+                    "food" : recipes[pilihan - 1],
+                    "food_data" : {
+                        "display_name" : game_data["recipe"][recipes[pilihan - 1]]["display_name"],
+                        "amount" : game_data["recipe"][recipes[pilihan - 1]]["amount"]
+                    }
+                }
+            }
+            return
+
 
 def market() -> None:
     while True:
