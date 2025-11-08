@@ -57,7 +57,7 @@ game_data: dict = {
         },
         "kecap" : {
             "display_name" : "Kecap",
-            "amount": "UNLIMITED",
+            "amount": 1000000,
             "capacity_type" : "kecap"
         },
         "table" : {
@@ -212,23 +212,17 @@ game_data: dict = {
         "chair" : 0
     }
 }
-pendapatan: list = []
-action_timer: dict = {
-
-}
-customer: dict = {
-    
-}
+action_timer: dict = {}
+customer: dict = {}
 turn = -1
 kitchen_data: dict = {
     "nasi" : 0,
-    "food_ready" : {
-        
-    }
+    "food_ready" : {}
 }
-table: dict = {
-    
-}
+table: dict = {}
+income: list = []
+read_notif: list = []
+unread_notif: list = []
 
 
 # Function declaration >III<
@@ -252,7 +246,7 @@ def stock() -> None:
     pass
 def get_unit_formatted(amount: int, capacity_type: str) -> str:
     pass
-def money_format(num: int) -> str:
+def dot_format(num: int) -> str:
     pass
 def recipe() -> None:
     pass
@@ -274,9 +268,13 @@ def day_end() -> None:
     pass
 def decrease_turn(by: int) -> None:
     pass
-def do_action(action: dict) -> None:
+def do_delayed_action(action: dict) -> None:
     pass
 def command_cook(chef: str) -> None:
+    pass
+def cook() -> None:
+    pass
+def notification() -> None:
     pass
 
 
@@ -346,23 +344,25 @@ def load_game_data() -> int:
                 return LOAD_CORRUPTED
 
 
-def money_format(num: int) -> str:
+def dot_format(num: int) -> str:
     return ("{:,}".format(num)).replace(",", ".")
 
 
 def game() -> None:
+    global unread_notif
     update_table()
     while True:
+        notif_str = f'Notif{f"({len(unread_notif)})" if len(unread_notif) > 0 else ""}'
         menu_list: list
         if turn == -1:
             menu_list = ['Meja Kasir', 'Cek Pekerja', 'Furnitur', 'Market', 'Stok', 'Main Menu']
         else:
-            menu_list = ['Meja Kasir', 'Dapur', 'Cek Pekerja', 'Market', 'Stok', 'Main Menu']
+            menu_list = ['Meja Kasir', 'Dapur', 'Cek Pekerja', notif_str, 'Market', 'Stok', 'Main Menu']
         print(
 f"""
 *-====DAY {game_data["day"]}====-*
-Turn: {"FREE" if turn == -1 else turn}/24
-Money: {money_format(game_data["money"])}
+Turn: {"FREE" if turn == -1 else turn}
+Money: {dot_format(game_data["money"])}
 1 - {"Mulai hari" if turn == -1 else "Tunggu(-1 TURN)"}"""
         )
         for i in range(len(menu_list)):
@@ -383,14 +383,82 @@ Money: {money_format(game_data["money"])}
             furniture()
         elif pilihan == find_in_list(menu_list, "Stok") + 2:
             stock()
+        elif pilihan == find_in_list(menu_list, notif_str) + 2:
+            notification()
         elif pilihan == find_in_list(menu_list, "Main Menu") + 2:
             return
 
 
+def notification() -> None:
+    print()
+    if len(read_notif) + len(unread_notif) <= 0:
+        print("Belum ada notifikasi.")
+        input("Enter...")
+        return
+    for n in read_notif:
+        print(f"- {n}")
+    for n in unread_notif:
+        print(f"+ {n}")
+        read_notif.append(n)
+    unread_notif.clear()
+    print(
+"""1 - Clear
+2 - Back"""
+    )
+    pilihan = input_int_in_range("Masukkan pilihan: ", 1, 2)
+    if pilihan == 1:
+        read_notif.clear()
+        return
+    elif pilihan == 2:
+        return
+
+
 def day_end() -> None:
+    global turn
     action_timer.clear()
     for w in game_data["worker"]:
         game_data["worker"][w]["status"] = WORKER_STATUS_SLEEPING
+    turn = -1
+    if len(income) <= 0:
+        print("\n-+=====DAY END=====+-")
+        sleep(0.5)
+        print(
+"""
++-------------------+
+| Pendapatan: 0 -_- |
++-------------------+
+"""
+        )
+        input("Enter...")
+        return
+    reveal_delay = 0.3
+    total: int = 0
+    length = 0
+    for i in income:
+        length = len(dot_format(i)) if len(dot_format(i)) > length else length
+        total += i
+    length = len(dot_format(total)) if len(dot_format(total)) > length else length
+    print(f'\n-+{"=" * round((5 + length) / 2)}DAY END{"=" * round((5 + length) / 2)}+-')
+    sleep(0.5)
+    print(
+f"""
++-------------{"-" * length}-+
+| Pendapatan: {" " * (length - len(dot_format(income[0])))}{dot_format(income[0])} |"""
+    )
+    for i in range(len(income) - 1):
+        sleep(reveal_delay)
+        print(f"|             {' ' * (length - len(dot_format(income[i])))}{dot_format(income[i])} |")
+    print(f'|             {"-" * length}+|')
+    sleep(reveal_delay)
+    print(
+f"""|             {' ' * (length - len(dot_format(total)))}{dot_format(total)} |
++-------------{"-" * length}-+
+"""
+    )
+    input("Enter...")
+    income.clear()
+    
+
 
 
 def decrease_turn(by: int) -> None:
@@ -406,25 +474,28 @@ def decrease_turn(by: int) -> None:
         action_timer[a]["time"] -= 1
         if not action_timer[a]["time"] <= 0:
             continue
-        do_action(action_timer[a])
+        do_delayed_action(action_timer[a])
         action_timer.pop(a)
     decrease_turn(by - 1)
 
 
-def do_action(action: dict) -> None:
+def do_delayed_action(action: dict) -> None:
     action_data = action["action_data"]
     if action["type"] == ACTION_TYPE_FOOD_READY:
         game_data["worker"][action_data["chef"]]["status"] = WORKER_STATUS_WAITING_FOR_COMMAND
         if action_data["food"] == "nasi":
             kitchen_data["nasi"] = min(game_data["cooked_rice_capacity"], kitchen_data["nasi"] + action_data["food_data"]["amount"])
             update_nasi()
+            unread_notif.append("Nasi siap!")
             return
         if not action_data["food"] in kitchen_data["food_ready"]:
             kitchen_data["food_ready"][action_data["food"]] = {
                 "display_name" : action_data["food_data"]["display_name"],
                 "amount" : action_data["food_data"]["amount"]
             }
+            unread_notif.append(f'{action_data["food_data"]["amount"]} {action_data["food_data"]["display_name"]} siap!')
             return
+        unread_notif.append(f'{action_data["food_data"]["amount"]} {action_data["food_data"]["display_name"]} siap!')
         kitchen_data["food_ready"][action_data["food"]]["amount"] += action_data["food_data"]["amount"]
         return
 
@@ -445,7 +516,7 @@ def update_nasi() -> None:
         return
     kitchen_data["food_ready"]["nasi"] = {
         "display_name" : "Sepiring Nasi",
-        "amount" : (kitchen_data["nasi"] - (kitchen_data["nasi"] % 100)) / 100
+        "amount" : round((kitchen_data["nasi"] - round(kitchen_data["nasi"] % 0.1)) / 0.1)
     }
 
 
@@ -543,14 +614,14 @@ def kitchen() -> None:
 f"""
 /~| Dapur |~\\
 Nasi: {get_unit_formatted(kitchen_data["nasi"], "cooked_rice_capacity")}
-1 - Masak
+1 - Masak(TURN LOSS)
 2 - Suruh Masak
 3 - Cek Makanan
 4 - Back"""
         )
         pilihan = input_int_in_range("Masukkan pilihan: ", 1, 4)
         if pilihan == 1:
-            pass
+            cook()
         elif pilihan == 2:
             chef_available: bool = False
             for w in game_data["worker"]:
@@ -575,6 +646,56 @@ Nasi: {get_unit_formatted(kitchen_data["nasi"], "cooked_rice_capacity")}
             return
 
 
+def cook() -> None:
+    while True:
+        recipes = list(game_data["recipe"].keys())
+        print("\n+~Masakan~+")
+        for f in range(len(recipes)):
+            ingredients: str = ""
+            for i in game_data["recipe"][recipes[f]]["material"]:
+                ingredients += f"{get_unit_formatted(game_data['recipe'][recipes[f]]['material'][i]['amount'], game_data['recipe'][recipes[f]]['material'][i]['capacity_type'], False)} {game_data['recipe'][recipes[f]]['material'][i]['display_name']}, "
+            ingredients += f"{game_data['recipe'][recipes[f]]['time']} TURN"
+            print(f"{f + 1} - {game_data['recipe'][recipes[f]]['display_name']}: {ingredients}")
+        print(f"{len(recipes) + 1} - Cancel")
+        pilihan = input_int_in_range("Masukkan pilihan: ", 1, len(recipes) + 1)
+        material_available: bool = True
+        if pilihan == len(recipes) + 1:
+            return
+        for m in game_data["recipe"][recipes[pilihan - 1]]["material"]:
+            if not m == "nasi":
+                if game_data["stock"][m]["amount"] < game_data["recipe"][recipes[pilihan - 1]]["material"][m]["amount"]:
+                    print("Bahan-Bahan kurang.")
+                    input("Enter...")
+                    material_available = False
+                    break
+                game_data["stock"][m]["amount"] -= game_data["recipe"][recipes[pilihan - 1]]["material"][m]["amount"]
+                continue
+            if kitchen_data["nasi"] < game_data["recipe"][recipes[pilihan - 1]]["material"][m]["amount"]:
+                print("Bahan-Bahan kurang.")
+                input("Enter...")
+                material_available = False
+                break
+            kitchen_data["nasi"] = round(kitchen_data["nasi"] - game_data["recipe"][recipes[pilihan - 1]]["material"][m]["amount"], 2)
+            update_nasi()
+
+        if not material_available:
+            continue
+        decrease_turn(game_data["recipe"][recipes[pilihan - 1]]["time"])
+        if recipes[pilihan - 1] == "nasi":
+            kitchen_data["nasi"] = min(game_data["cooked_rice_capacity"], kitchen_data["nasi"] + game_data["recipe"][recipes[pilihan - 1]]["amount"])
+            update_nasi()
+            return
+        if not recipes[pilihan - 1] in kitchen_data["food_ready"]:
+            kitchen_data["food_ready"][recipes[pilihan - 1]] = {
+                "display_name" : game_data["recipe"][recipes[pilihan - 1]]["display_name"],
+                "amount" : game_data["recipe"][recipes[pilihan - 1]]["amount"]
+            }
+            return
+        kitchen_data["food_ready"][recipes[pilihan - 1]]["amount"] += game_data["recipe"][recipes[pilihan - 1]]["amount"]
+        return
+        
+
+
 def command_cook(chef: str) -> None:
     while True:
         recipes = list(game_data["recipe"].keys())
@@ -590,31 +711,41 @@ def command_cook(chef: str) -> None:
         material_available: bool = True
         if pilihan == len(recipes) + 1:
             return
-        else:
-            for m in game_data["recipe"][recipes[pilihan - 1]]["material"]:
+        for m in game_data["recipe"][recipes[pilihan - 1]]["material"]:
+            if not m == "nasi":
                 if game_data["stock"][m]["amount"] < game_data["recipe"][recipes[pilihan - 1]]["material"][m]["amount"]:
                     print("Bahan-Bahan kurang.")
                     input("Enter...")
                     material_available = False
                     break
-            if not material_available:
+                game_data["stock"][m]["amount"] -= game_data["recipe"][recipes[pilihan - 1]]["material"][m]["amount"]
                 continue
-            action_id = hex(int(time()))
-            game_data["worker"][chef]["action"] = action_id
-            game_data["worker"][chef]["status"] = WORKER_STATUS_WORKING
-            action_timer[action_id] = {
-                "type" : ACTION_TYPE_FOOD_READY,
-                "time" : game_data["recipe"][recipes[pilihan - 1]]["time"],
-                "action_data" : {
-                    "chef" : chef,
-                    "food" : recipes[pilihan - 1],
-                    "food_data" : {
-                        "display_name" : game_data["recipe"][recipes[pilihan - 1]]["display_name"],
-                        "amount" : game_data["recipe"][recipes[pilihan - 1]]["amount"]
-                    }
+            if kitchen_data["nasi"] < game_data["recipe"][recipes[pilihan - 1]]["material"][m]["amount"]:
+                print("Bahan-Bahan kurang.")
+                input("Enter...")
+                material_available = False
+                break
+            kitchen_data["nasi"] = round(kitchen_data["nasi"] - game_data["recipe"][recipes[pilihan - 1]]["material"][m]["amount"], 2)
+            update_nasi()
+
+        if not material_available:
+            continue
+        action_id = hex(int(time()))
+        game_data["worker"][chef]["action"] = action_id
+        game_data["worker"][chef]["status"] = WORKER_STATUS_WORKING
+        action_timer[action_id] = {
+            "type" : ACTION_TYPE_FOOD_READY,
+            "time" : game_data["recipe"][recipes[pilihan - 1]]["time"],
+            "action_data" : {
+                "chef" : chef,
+                "food" : recipes[pilihan - 1],
+                "food_data" : {
+                    "display_name" : game_data["recipe"][recipes[pilihan - 1]]["display_name"],
+                    "amount" : game_data["recipe"][recipes[pilihan - 1]]["amount"]
                 }
             }
-            return
+        }
+        return
 
 
 def market() -> None:
@@ -624,15 +755,15 @@ def market() -> None:
 f"""
 $$$ MARKET $$$
 ==============
-Money: {money_format(game_data["money"])}"""
+Money: {dot_format(game_data["money"])}"""
         )
         for i in range(len(market_items)):
             item = game_data['market'][market_items[i]]
             item_type = item['type']
             if item_type == TYPE_INGREDIENT:
-                print(f"{i + 1} - {item['display_name']} {get_unit_formatted(item['amount'], item['capacity_type'], False)}: {money_format(item['cost'])}")
+                print(f"{i + 1} - {item['display_name']} {get_unit_formatted(item['amount'], item['capacity_type'], False)}: {dot_format(item['cost'])}")
             elif item_type == TYPE_WORKER or item_type == TYPE_RECIPE:
-                print(f"{i + 1} - {item['display_name']}: {money_format(item['cost'])}")
+                print(f"{i + 1} - {item['display_name']}: {dot_format(item['cost'])}")
         print(f"{len(market_items) + 1} - Back")
         pilihan = input_int_in_range("Masukkan pilihan: ", 1, len(market_items) + 1)
         if pilihan == len(market_items) + 1:
@@ -648,12 +779,12 @@ def market_item_inspect(item: str) -> None:
         cost = market_item["cost"] * count
         display_text = f'{market_item["display_name"]} {get_unit_formatted(market_item["amount"], market_item["capacity_type"], False) if (market_item["type"] == TYPE_INGREDIENT and not market_item["capacity_type"] == "quantity") else ""} x{count}'
         length = len(display_text)
-        display_cost = f'Harga: {money_format(cost)}'
+        display_cost = f'Harga: {dot_format(cost)}'
         if len(display_cost) > length:
             length = len(display_cost)
         print(
 f"""
-Money: {money_format(game_data["money"])}
+Money: {dot_format(game_data["money"])}
 =={"=" * length}==
 | {display_text}{" " * (length - len(display_text))} |
 | {display_cost}{" " * (length - len(display_cost))} |
@@ -741,7 +872,7 @@ f"""
 {"=" * (len(selected_recipe["display_name"]) + 1)}
 Deskripsi: {selected_recipe["description"]}
 Hasil: {get_unit_formatted(selected_recipe["amount"], selected_recipe["capacity_type"], False)}
-Harga: {money_format(selected_recipe["cost"])}
+Harga: {dot_format(selected_recipe["cost"])}
 Bahan-Bahan:"""
         )
         for i in recipe_material:
@@ -752,21 +883,21 @@ Bahan-Bahan:"""
 
 def get_unit_formatted(amount: int, capacity_type: str, use_ratio: bool = True) -> str:
     if capacity_type == "quantity":
-        return f"x{amount}"
+        return f"x{dot_format(amount)}"
     if capacity_type == "kecap" and type(amount) == str:
         return f"UNLIMITED"
     if capacity_type == "kecap":
-        return f"{amount}ml"
+        return f"{dot_format(amount)}ml"
     if game_data["option"]["satuan"] == G and use_ratio:
-        return f"{amount * 1000}g/{game_data[capacity_type] * 1000}g".replace(".", ",")
+        return f"{round(amount * 1000, 2)}g/{game_data[capacity_type] * 1000}g".replace(".", ",")
     if game_data["option"]["satuan"] == KG and use_ratio:
-        return f"{amount}Kg/{game_data[capacity_type]}Kg".replace(".", ",")
+        return f"{round(amount, 2)}Kg/{game_data[capacity_type]}Kg".replace(".", ",")
     if game_data["option"]["satuan"] == G:
-        return f"{amount * 1000}g".replace(".", ",")
+        return f"{round(amount * 1000, 2)}g".replace(".", ",")
     if game_data["option"]["satuan"] == KG:
-        return f"{amount}Kg".replace(".", ",")
+        return f"{round(amount, 2)}Kg".replace(".", ",")
     if game_data["option"]["satuan"] == PERCENT:
-        return f"{(float(amount) / game_data[capacity_type]) * 100}%".replace(".", ",")
+        return f"{round((float(amount) / game_data[capacity_type]) * 100, 2)}%".replace(".", ",")
 
 
 def worker() -> None:
