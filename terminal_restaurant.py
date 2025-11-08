@@ -1,5 +1,6 @@
 import json
 from time import sleep, time
+from math import floor
 
 G = 0
 KG = 1
@@ -21,7 +22,7 @@ ACTION_TYPE_FOOD_READY = 1
 ACTION_TYPE_CUSTOMER_SERVED = 2
 game_data: dict = {
     "day" : 0,
-    "money" : 125000,
+    "money" : 50000,
     "option" : {
         "satuan" : KG
     },
@@ -126,6 +127,13 @@ game_data: dict = {
             "amount" : 0.1,
             "capacity_type" : "spice_capacity",
             "cost" : 10000,
+            "type" : TYPE_INGREDIENT
+        },
+        "kecap" : {
+            "display_name" : "Kecap",
+            "amount" : 100,
+            "capacity_type" : "kecap",
+            "cost" : 5000,
             "type" : TYPE_INGREDIENT
         },
         "table" : {
@@ -749,12 +757,13 @@ def command_cook(chef: str) -> None:
 
 
 def market() -> None:
+    page = 24
     while True:
         market_items = list(game_data["market"].keys())
         print(
 f"""
 $$$ MARKET $$$
-==============
+{"=" * (4 - len(str(page)))}<Page {page + 1}>{"=" * (4 - len(str(page)) + (len(str(page)) + 1) % 2)}
 Money: {dot_format(game_data["money"])}"""
         )
         for i in range(len(market_items)):
@@ -767,6 +776,8 @@ Money: {dot_format(game_data["money"])}"""
         print(f"{len(market_items) + 1} - Back")
         pilihan = input_int_in_range("Masukkan pilihan: ", 1, len(market_items) + 1)
         if pilihan == len(market_items) + 1:
+            return
+        elif pilihan == len(market_items) + 2:
             return
         else:
             market_item_inspect(market_items[pilihan - 1])
@@ -810,6 +821,9 @@ Money: {dot_format(game_data["money"])}
                         "amount" : count * market_item["amount"],
                         "capacity_type" : market_item["capacity_type"]
                     }
+                    return
+                if market_item["capacity_type"] == "kecap":
+                    game_data["stock"][item]["amount"] = game_data["stock"][item]["amount"] + (count * market_item["amount"])
                     return
                 if market_item["capacity_type"] == "quantity":
                     game_data["stock"][item]["amount"] += count
@@ -938,10 +952,12 @@ Status: {"Tidur" if status == WORKER_STATUS_SLEEPING else ("Menunggu perintah" i
             for i in game_data["worker"].keys():
                 if game_data["worker"][i]["type"] == WORKER_TYPE_CHEF:
                     chef_count += 1
-            if not chef_count > 1:
+            if not chef_count > 1 and game_data["worker"][worker]["type"] == WORKER_TYPE_CHEF:
                 print("Tidak bisa memecat chef jika chef hanya 1.")
                 input("Enter...")
                 continue
+            if status == WORKER_STATUS_WORKING:
+                action_timer.pop(game_data["worker"][worker]["action"])
             game_data["worker"].pop(worker)
             return
 
