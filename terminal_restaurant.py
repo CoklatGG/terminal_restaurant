@@ -251,6 +251,7 @@ kitchen_data: dict = {
 }
 table: dict = {}
 income: list = []
+new_notif: list = []
 read_notif: list = []
 unread_notif: list = []
 customer_line: list = []
@@ -313,7 +314,7 @@ def dot_format(num: int) -> str:
 
 
 # Back-End shi' right here
-def queue_customer(data: dict) -> None:
+def enqueue_customer(data: dict) -> None:
     if len(customer_line) <= 0:
         customer_line.append(data)
         customer_line[0]["action"] = schedule_action(
@@ -369,6 +370,14 @@ def load_game_data() -> int:
 def decrease_turn(by: int) -> None:
     global turn
     if not by > 0:
+        if not len(new_notif) > 0:
+            return
+        print("\n<! Notifikasi !>")
+        for n in new_notif:
+            unread_notif.append(n)
+            print(f"+ {n}")
+            sleep(0.8)
+        new_notif.clear()
         return
     turn -= 1
     if turn <= 0:
@@ -390,19 +399,20 @@ def do_delayed_action(action: dict) -> None:
         game_data["worker"][action_data["chef"]]["status"] = WORKER_STATUS_WAITING_FOR_COMMAND
         if action_data["food"] == "nasi":
             kitchen_data["nasi"] = min(game_data["cooked_rice_capacity"], kitchen_data["nasi"] + action_data["food_data"]["amount"])
-            unread_notif.append("Nasi siap!")
+            new_notif.append("Nasi siap!")
             return
         if not action_data["food"] in kitchen_data["food_ready"]:
             kitchen_data["food_ready"][action_data["food"]] = {
                 "display_name" : action_data["food_data"]["display_name"],
                 "amount" : action_data["food_data"]["amount"]
             }
-            unread_notif.append(f'{action_data["food_data"]["amount"]} {action_data["food_data"]["display_name"]} siap!')
+            new_notif.append(f'{action_data["food_data"]["amount"]} {action_data["food_data"]["display_name"]} siap!')
             return
-        unread_notif.append(f'{action_data["food_data"]["amount"]} {action_data["food_data"]["display_name"]} siap!')
+        new_notif.append(f'{action_data["food_data"]["amount"]} {action_data["food_data"]["display_name"]} siap!')
         kitchen_data["food_ready"][action_data["food"]]["amount"] += action_data["food_data"]["amount"]
         return
     if action["type"] == ACTION_TYPE_CUSTOMER_ARRIVE:
+        new_notif.append("Pelanggan datang!")
         next_customer_time_mid = max(6 - floor(5 * (game_data["day"]/100)), 1)  
         schedule_action(
             {
@@ -410,7 +420,21 @@ def do_delayed_action(action: dict) -> None:
                 "time" : randint(next_customer_time_mid - 1, next_customer_time_mid + 1)
             }
         )
-        print("Pelanggan datang!")
+        random_number = rand(1, 100)
+        patience: int
+        menu = list(game_data["recipe"].keys())
+        if random_number > 50:
+            patience = 3
+        elif 10 < random_number < 50:
+            patience = 2
+        else:
+            patience = 1
+        enqueue_customer(
+            {
+                
+                "patience" : patience, 
+            }
+        )
 
 
 def schedule_action(action: dict) -> str:
@@ -532,8 +556,7 @@ $> Meja Kasir <$
 1 - Layani Pelanggan
 2 - Suruh Layani Pelanggan
 3 - Pesanan Menunggu
-4 - Back
-"""
+4 - Back"""
         )
         pilihan = input_int_in_range("Masukkan pilihan: ", 1, 4)
         if pilihan == 1:
