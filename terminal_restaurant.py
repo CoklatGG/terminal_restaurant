@@ -1,5 +1,5 @@
 import json
-from time import sleep, time
+from time import sleep
 from math import floor
 from random import randint
 
@@ -242,7 +242,8 @@ game_data: dict = {
         "chair" : 0
     }
 }
-customer: int = 0
+action_count = 0
+# customer: int = 0
 action_timer: dict = {}
 turn = -1
 kitchen_data: dict = {
@@ -251,6 +252,7 @@ kitchen_data: dict = {
 }
 table: dict = {}
 income: list = []
+outcome: list = []
 new_notif: list = []
 read_notif: list = []
 unread_notif: list = []
@@ -258,6 +260,11 @@ customer_line: list = []
 
 
 # Helper function ^_^
+def pick_random(data: list) -> str:
+    random_number = randint(0, len(data) - 1)
+    return data[random_number]
+
+
 def get_chef() -> list:
     result = []
     for w in game_data["worker"].items():
@@ -335,7 +342,7 @@ def dequeue_customer() -> None:
             {
                 "type" : ACTION_TYPE_CUSTOMER_LEAVE,
                 "time" : customer_line[0]["patience"],
-                "action_data" : data
+                "action_data" : customer_line[0]
             }
         )
     
@@ -420,25 +427,57 @@ def do_delayed_action(action: dict) -> None:
                 "time" : randint(next_customer_time_mid - 1, next_customer_time_mid + 1)
             }
         )
-        random_number = rand(1, 100)
+        random_number = randint(1, 100)
         patience: int
         menu = list(game_data["recipe"].keys())
-        if random_number > 50:
+        menu.pop(menu.index("nasi_kecap"))
+        menu.pop(menu.index("nasi"))
+        food_order = {}
+        if random_number >= 50:
             patience = 3
-        elif 10 < random_number < 50:
+        elif 10 <= random_number <= 50:
             patience = 2
         else:
             patience = 1
+        random_number = randint(1, 100)
+        if 25 <= (game_data["day"] % 30) and (game_data["day"] % 30) <= 30:
+            if 20 <= random_number and random_number <= 100:
+                food_order["nasi_kecap"] = randint(1, 4)
+            if 0 <= random_number and random_number <= 25:
+                for _ in range(randint(1, int(((15 + game_data["day"]) / 100) * 20))):
+                    random_food = pick_random(menu)
+                    if random_food in food_order:
+                        food_order[random_food] += 1
+                        continue
+                    food_order[random_food] = 1
+        else:
+            if 0 <= random_number and random_number <= 20:
+                food_order["nasi_kecap"] = randint(1, 2)
+            if 15 <= random_number and random_number <= 100:
+                for _ in range(randint(1, int(((15 + game_data["day"]) / 100) * 20))):
+                    random_food = pick_random(menu)
+                    if random_food in food_order:
+                        food_order[random_food] += 1
+                        continue
+                    food_order[random_food] = 1
+        random_number = randint(1, 100)
         enqueue_customer(
             {
-                
-                "patience" : patience, 
+                "food" : food_order,
+                "patience" : patience,
+                "eat_here" : random_number >= 20
             }
         )
+        return
+    if action["type"] == ACTION_TYPE_CUSTOMER_LEAVE:
+        dequeue_customer()
+        new_notif.append("Pelanggan pergi!")
 
 
 def schedule_action(action: dict) -> str:
-    action_id = hex(int(time()))
+    global action_count
+    action_id = hex(int(action_count))
+    action_count += 1
     if action["time"] <= 0:
         do_delayed_action(action)
         return action_id
@@ -551,8 +590,9 @@ Money: {dot_format(game_data["money"])}
 def cashier_desk() -> None:
     while True:
         print(
-"""
+f"""
 $> Meja Kasir <$
+Antrian: {len(customer_line)} Orang
 1 - Layani Pelanggan
 2 - Suruh Layani Pelanggan
 3 - Pesanan Menunggu
@@ -560,9 +600,119 @@ $> Meja Kasir <$
         )
         pilihan = input_int_in_range("Masukkan pilihan: ", 1, 4)
         if pilihan == 1:
-            pass
+            serve_customer()
+        elif pilihan == 2:
+            if not len(customer_line) > 0:
+                print("\nTidak ada yang mengantri.")
+                print("Enter...")
+                continue
+            command_serve_customer()
         elif pilihan == 4:
             return
+
+
+def food_giver(text: str) -> dict:
+    foods: list = []
+    while True:
+        food_ready = list(kitchen_data["food_ready"].keys())
+        if not len(foods) > 0:
+            print(
+"""
+        ~|# Makanan #|~
+O=============================O
+) Belum menambahkan makanan.  (
+O=============================O
+1 - Tambahkan Makanan
+2 - Cancel"""
+            )
+            pilihan = input_int_in_range("Masukkan pilihan: ", 1, 2)
+            if pilihan == 1:
+                if not len(food_ready) > 0:
+                    print("Belum ada makanan yang siap.")
+                    input("Enter...")
+                    continue
+                print()
+                for m in range(len(food_ready)):
+                    print(f"{m + 1} - {kitchen_data['food_ready'][food_ready[m]]['display_name']}: {kitchen_data['food_ready'][food_ready[m]]['amount']}")
+                print(len(food_ready) + 1)
+                pilihan_makanan = input_int_in_range("Masukkan pilihan: ", 1, len(food_ready) + 1)
+                if pilihan_makanan == len(food_ready) + 1:
+                    continue
+                else:
+                    kitchen_data["food_ready"][food_ready[pilihan_makanan - 1]]["amount"] -= 1
+                    foods.append({food_ready[pilihan_makanan - 1] : 1})
+                    continue
+            elif pilihan == 2:
+                return
+        else:
+            length: int = 0
+            food_string = []
+            for f in range(len(foods)):
+                food_name = list(foods[f].keys())[0]
+                food_string.append(
+                    f'{f + 1} - {game_data["recipe"][food_name]["display_name"]}: {foods[food_name]}'
+                )
+                length = len(food_string[f]) if len(food_string[f]) > length else length
+            length = length + ((length + 1) % 2)
+            print(
+f"""  {" " * ((length - 15) / 2)}~|# Makanan #|~
+O={"=" * length}=O"""
+            )
+            for f in food_string:
+                print(f') {f}{" " * (length - len(f))} (')
+            print(f'O={"=" * length}=O')
+            print(
+f"""1 - Tambahkan Makanan
+2 - Kurangi Makanan
+3 - {text}
+4 - Cancel"""
+            )
+            pilihan = input_int_in_range("Masukkan pilihan: ", 1, 4) 
+            if pilihan == 1:
+                pass
+            elif pilihan == 4:
+                for f in foods:
+                    food_name = list(f.keys())[0]
+                    kitchen_data["food_ready"][food_name]["amount"] += f[food_name]
+                return
+            
+
+            
+        
+    
+
+
+def serve_customer() -> None:
+    while True:
+        if not len(customer_line) > 0:
+            print("\nTidak ada yang mengantri.")
+            input("Enter...")
+            return
+        data = customer_line[0]
+        order = list(data["food"].keys())
+        print(
+f"""
+o-O Pelanggan O-o
+Pesanan: - {game_data["recipe"][order[0]]["display_name"]}: {data["food"][order[0]]}"""
+        )
+        for f in range(len(order) - 1):
+            print(f'         - {game_data["recipe"][order[f + 1]]["display_name"]}: {data["food"][order[f + 1]]}')
+        print(
+f"""Makan di: {"sini" if data["eat_here"] else "bungkus"}
+Sisa kesabaran: {action_timer[data["action"]]["time"]} TURN
+1 - {"Catat Pesanan dan Antar ke Meja" if data["eat_here"] else "Terima Pembayaran dan Beri Makanan"}
+2 - Back"""
+        )
+        pilihan = input_int_in_range("Masukkan pilihan: ", 1, 2)
+        if pilihan == 1:
+            pass
+        elif pilihan == 2:
+            return
+
+
+
+def command_serve_customer() -> None:
+    pass
 
 
 def notification() -> None:
@@ -599,44 +749,56 @@ def day_end() -> None:
     for w in game_data["worker"]:
         game_data["worker"][w]["status"] = WORKER_STATUS_SLEEPING
     turn = -1
-    if len(income) <= 0:
+    if len(income) <= 0 and len(outcome) <= 0:
         print("\n-+=====DAY END=====+-")
         sleep(0.5)
         print(
 """
 +-------------------+
 | Pendapatan: 0 -_- |
+| Pengeluaran: 0    |
 +-------------------+
 """
         )
         input("Enter...")
         return
     reveal_delay = 0.3
+    income_total: int = 0
     total: int = 0
     length = 0
     for i in income:
         length = len(dot_format(i)) if len(dot_format(i)) > length else length
         total += i
+        income_total += i
+    for o in outcome:
+        length = len(dot_format(o)) if len(dot_format(o)) > length else length
+        total -= o
     length = len(dot_format(total)) if len(dot_format(total)) > length else length
+    length = len(dot_format(income_total)) if len(dot_format(income_total)) > length else length
     print(f'\n-+{"=" * round((5 + length) / 2)}DAY END{"=" * round((5 + length) / 2)}+-')
     sleep(0.5)
     print(
 f"""
-+-------------{"-" * length}-+
-| Pendapatan: {" " * (length - len(dot_format(income[0])))}{dot_format(income[0])} |"""
++--------------{"-" * length}---+
+| Pendapatan:  {f'{" " * (length - len(dot_format(income[0])))}{dot_format(income[0])}' if len(income) > 0 else f'{" " * (length - 1)}0'}   |"""
     )
     for i in range(len(income) - 1):
         sleep(reveal_delay)
-        print(f"|             {' ' * (length - len(dot_format(income[i])))}{dot_format(income[i])} |")
-    print(f'|             {"-" * length}+|')
+        print(f"|              {' ' * (length - len(dot_format(income[i])))}{dot_format(income[i])}   |")
+    print(f'|              {"-" * length} + |')
     sleep(reveal_delay)
-    print(
-f"""|             {' ' * (length - len(dot_format(total)))}{dot_format(total)} |
-+-------------{"-" * length}-+
-"""
-    )
+    print(f"|              {' ' * (length - len(dot_format(income_total)))}{dot_format(income_total)}   |")
+    print(f"| Pengeluaran: {f'{" " * (length - len(dot_format(outcome[0])))}{dot_format(outcome[0])}' if len(outcome) > 0 else f'{" " * (length - 1)}0'}   |")
+    for o in range(len(outcome) - 1):
+        sleep(reveal_delay)
+        print(f"|              {' ' * (length - len(dot_format(outcome[i])))}{dot_format(outcome[i])}   |")
+    print(f'|              {"-" * length} - |')
+    sleep(reveal_delay)
+    print(f"| PROFIT:      {' ' * (length - len(dot_format(total)))}{dot_format(total)}   |")
+    print(f"+--------------{"-" * length}---+")
     input("Enter...")
     income.clear()
+    outcome.clear()
 
 
 def furniture() -> None:
@@ -922,6 +1084,7 @@ Money: {dot_format(game_data["money"])}
                 input("Enter...")
                 return
             game_data["money"] -= cost
+            outcome.append(cost)
             if market_item["type"] == TYPE_INGREDIENT:
                 if not (item in game_data["stock"].keys()):
                     game_data["stock"][item] = {
