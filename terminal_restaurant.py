@@ -1043,6 +1043,7 @@ def day_end() -> None:
     unread_notif.clear()
     new_notif.clear()
     awaiting_order.clear()
+    serving_cashier = None
     kitchen_data["food_ready"].clear()
     for w in game_data["worker"]:
         game_data["worker"][w]["status"] = WORKER_STATUS_SLEEPING
