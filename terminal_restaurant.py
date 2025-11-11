@@ -587,6 +587,11 @@ def update_table() -> str:
     return "Meja dan kursi tertata dengan rapi."
 
 
+def save_game() -> None:
+    with open("game_data.json", "w") as f:
+        json.dump(game_data, f)
+
+
 # Gameplay function ^o^
 def main_menu() -> None:
     while True:
@@ -598,8 +603,7 @@ def main_menu() -> None:
         elif pilihan == 2:
             option()
         elif pilihan == 3:
-            with open("game_data.json", "w") as f:
-                json.dump(game_data, f)
+            save_game()
             break
         
 
@@ -780,6 +784,8 @@ f"""1 - Tambahkan Makanan
                         input("Enter...")
                         continue
                     kitchen_data["food_ready"][food_name]["amount"] -= 1
+                    if not kitchen_data["food_ready"][food_name]["amount"] > 0:
+                        kitchen_data["food_ready"].pop(food_name)
                     if food_name in foods:
                         foods[food_name] += 1
                         continue
@@ -788,15 +794,27 @@ f"""1 - Tambahkan Makanan
             elif pilihan == 2:
                 pilihan_makanan = input_int_in_range("Masukkan pilihan makanan: ", 1, len(food_string))
                 food_name = list(foods.keys())[pilihan_makanan - 1]
-                kitchen_data["food_ready"][food_name]["amount"] += 1
                 foods[food_name] -= 1
                 if not foods[food_name] > 0:
                     foods.pop(food_name)
+                if not food_name in kitchen_data["food_ready"]:
+                    kitchen_data["food_ready"][food_name] = {
+                        "display_name" : game_data["recipe"][food_name]["display_name"],
+                        "amount" : 1
+                    }
+                    continue
+                kitchen_data["food_ready"][food_name]["amount"] += 1
                 continue
             elif pilihan == 3:
                 return foods
             elif pilihan == 4:
                 for f in foods:
+                    if not f in kitchen_data["food_ready"]:
+                        kitchen_data["food_ready"][f] = {
+                            "display_name" : game_data["recipe"][f]["display_name"],
+                            "amount" : foods[f]
+                        }
+                        continue
                     kitchen_data["food_ready"][f]["amount"] += foods[f]
                 return
 
@@ -820,7 +838,7 @@ Pesanan: - {game_data["recipe"][order[0]]["display_name"]}: {data["food"][order[
 f"""Makan di: {"sini" if data["eat_here"] else "bungkus"}
 Sisa kesabaran: {action_timer[data["action"]]["time"]} TURN
 1 - {"Catat Pesanan dan Antar ke Meja(-1 TURN)" if data["eat_here"] else "Terima Pembayaran dan Beri Makanan"}
-{"2 - Back" if not data["eat_here"] else "2 - Terima Pembayaran dan Beri Makanan(80% CUT)"}"""
+{"2 - Back" if not data["eat_here"] else "2 - Terima Pembayaran dan Beri Makanan(-20% CUT)"}"""
         )
         if data["eat_here"]:
             print("3 - Back")
@@ -1038,6 +1056,7 @@ def day_end() -> None:
 | Pendapatan: 0 -_- |
 | Pengeluaran: 0    |
 +-------------------+
+Auto-Saved!
 """
         )
         input("Enter...")
@@ -1064,19 +1083,21 @@ f"""
     )
     for i in range(len(income) - 1):
         sleep(reveal_delay)
-        print(f"|              {' ' * (length - len(dot_format(income[i])))}{dot_format(income[i])}   |")
+        print(f"|              {' ' * (length - len(dot_format(income[i + 1])))}{dot_format(income[i + 1])}   |")
     print(f'|              {"-" * length} + |')
     sleep(reveal_delay)
     print(f"|              {' ' * (length - len(dot_format(income_total)))}{dot_format(income_total)}   |")
     print(f"""| Pengeluaran: {f'{" " * (length - len(dot_format(outcome[0])))}{dot_format(outcome[0])}' if len(outcome) > 0 else f'{" " * (length - 1)}0'}   |""")
     for o in range(len(outcome) - 1):
         sleep(reveal_delay)
-        print(f"|              {' ' * (length - len(dot_format(outcome[i])))}{dot_format(outcome[i])}   |")
+        print(f"|              {' ' * (length - len(dot_format(outcome[o + 1])))}{dot_format(outcome[o + 1])}   |")
     print(f'|              {"-" * length} - |')
     sleep(reveal_delay)
-    print(f"| PROFIT:      {' ' * (length - len(dot_format(total)))}{dot_format(total)}   |")
+    print(f"| {'PROFIT:' if total > 0 else 'LOSS:  '}      {' ' * (length - len(dot_format(abs(total))))}{dot_format(abs(total))}   |")
     print(f"+--------------{'-' * length}---+")
+    print(f"Auto-Saved!")
     input("Enter...")
+    save_game()
     income.clear()
     outcome.clear()
 
@@ -1119,6 +1140,8 @@ def furniture() -> None:
                 game_data["stock"].pop("chair")
         elif pilihan == find_in_list(menu_list, "Kurangi Meja") + 1:
             jumlah = min(max(input_safe_int("Masukkan jumlah: "), 0), game_data["furniture"]["table"])
+            if not jumlah > 0:
+                continue
             game_data["furniture"]["table"] -= jumlah
             if not "table" in game_data["stock"]:
                 game_data["stock"]["table"] = {
@@ -1129,6 +1152,8 @@ def furniture() -> None:
             game_data["stock"]["table"]["amount"] += jumlah
         elif pilihan == find_in_list(menu_list, "Kurangi Kursi") + 1:
             jumlah = min(max(input_safe_int("Masukkan jumlah: "), 0), game_data["furniture"]["chair"])
+            if not jumlah > 0:
+                continue
             game_data["furniture"]["chair"] -= jumlah
             if not "chair" in game_data["stock"]:
                 game_data["stock"]["chair"] = {
@@ -1272,7 +1297,12 @@ def command_cook(chef: str) -> None:
             return
         for m in game_data["recipe"][recipes[pilihan - 1]]["material"]:
             if not m == "nasi":
-                if game_data["stock"][m]["amount"] < game_data["recipe"][recipes[pilihan - 1]]["material"][m]["amount"]:
+                # if not m in game_data["stock"]:
+                #     print("\nBahan-Bahan kurang.")
+                #     input("Enter...")
+                #     material_available = False
+                #     break
+                if not m in game_data["stock"] or game_data["stock"][m]["amount"] < game_data["recipe"][recipes[pilihan - 1]]["material"][m]["amount"]:
                     print("\nBahan-Bahan kurang.")
                     input("Enter...")
                     material_available = False
@@ -1546,4 +1576,7 @@ f"""
 
 if __name__ == "__main__":
     if not load_game_data() == LOAD_CORRUPTED:
-        main_menu()
+        try:
+            main_menu()
+        except RuntimeError:
+            save_game()
