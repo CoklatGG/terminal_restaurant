@@ -22,6 +22,7 @@ ACTION_TYPE_CUSTOMER_LEAVE = 0
 ACTION_TYPE_FOOD_READY = 1
 ACTION_TYPE_CUSTOMER_SERVED = 2
 ACTION_TYPE_CUSTOMER_ARRIVE = 3
+ACTION_TYPE_CUSTOMER_FINISHED_EATING = 4
 game_data: dict = {
     "day" : 0,
     "money" : 50000,
@@ -243,8 +244,6 @@ game_data: dict = {
     }
 }
 action_count = 0
-# customer: int = 0
-action_timer: dict = {}
 turn = -1
 kitchen_data: dict = {
     "nasi" : 0,
@@ -256,7 +255,10 @@ outcome: list = []
 new_notif: list = []
 read_notif: list = []
 unread_notif: list = []
+action_timer: dict = {}
 customer_line: list = []
+awaiting_order: list = []
+serving_cashier: str = None
 
 
 # Helper function ^_^
@@ -267,7 +269,7 @@ def pick_random(data: list) -> str:
 
 def get_chef() -> list:
     result = []
-    for w in game_data["worker"].items():
+    for w in game_data["worker"].values():
         if w["type"] == WORKER_TYPE_CHEF:
             result.append(w)
     return result
@@ -281,8 +283,9 @@ def find_in_list(l: list, value) -> int:
 
 def input_safe_int(text: str) -> int:
     while True:
+        user_input = input(text)
         try:
-            return int(input(text))
+            return int(user_input)
         except ValueError:
             continue
 
@@ -317,7 +320,7 @@ def get_unit_formatted(amount: int, capacity_type: str, use_ratio: bool = True) 
 
 
 def dot_format(num: int) -> str:
-    return ("{:,}".format(num)).replace(",", ".")
+    return ("{:,}".format(round(num))).replace(",", ".")
 
 
 # Back-End shi' right here
@@ -392,6 +395,8 @@ def decrease_turn(by: int) -> None:
         return
     actions = list(action_timer.keys())
     for a in actions:
+        if not a in action_timer:
+            continue
         action_timer[a]["time"] -= 1
         if not action_timer[a]["time"] <= 0:
             continue
@@ -465,13 +470,67 @@ def do_delayed_action(action: dict) -> None:
             {
                 "food" : food_order,
                 "patience" : patience,
-                "eat_here" : random_number >= 20
+                "eat_here" : random_number > 50
             }
         )
+        return
+    if action["type"] == ACTION_TYPE_CUSTOMER_FINISHED_EATING:
+        table[action["action_data"]]["customer"].pop(0)
+        new_notif.append(f'Pelanggan di Meja {list(table.keys()).index(action["action_data"]) + 1} Telah Selesai Makan!')
+        return
+    if action["type"] == ACTION_TYPE_CUSTOMER_SERVED:
+        global serving_cashier
+        action_data = action["action_data"]
+        table_available: bool = False
+        choosed_table: str = ''
+        for m in table.keys():
+            if len(table[m]["customer"]) < table[m]["capacity"]:
+                choosed_table = m
+                table_available = True
+                break
+        if action_data["customer"]["eat_here"] and table_available:
+            table[choosed_table]["customer"].append("a")
+            awaiting_order.append(
+                {
+                    "food" : action_data["customer"]["food"],
+                    "table" : choosed_table
+                }
+            )
+            if action_data["customer"]["action"] in action_timer:
+                action_timer.pop(action_data["customer"]["action"])
+            dequeue_customer()
+            serving_cashier = None
+            game_data["worker"][action_data["cashier"]]["status"] = WORKER_STATUS_WAITING_FOR_COMMAND
+            new_notif.append("Pelanggan dilayani! Pesanan tercatat dan pelanggan duduk di meja.")
+            return
+        order = action_data["customer"]["food"]
+        for f, a in action_data["customer"]["food"].items():
+            if (not f in kitchen_data["food_ready"]) or kitchen_data["food_ready"][f]["amount"] < a :
+                new_notif.append("Gagal melayani pelanggan! Makanan kurang.")
+                customer_action = action_data["customer"]["action"]
+                action_timer[customer_action]["time"] -= 1
+                if not action_timer[customer_action]["time"] > 0:
+                    do_delayed_action(action_timer[customer_action])
+                    action_timer.pop(customer_action)
+                serving_cashier = None
+                game_data["worker"][action_data["cashier"]]["status"] = WORKER_STATUS_WAITING_FOR_COMMAND
+                return
+        for f, a in action_data["customer"]["food"].items():
+            kitchen_data["food_ready"][f]["amount"] -= a
+            cost = game_data["recipe"][f]["cost"] * a * ((80 / 100) if action_data["customer"]["eat_here"] else 1)
+            game_data["money"] += cost
+            income.append(cost)
+        if action_data["customer"]["action"] in action_timer:
+            action_timer.pop(action_data["customer"]["action"])
+        serving_cashier = None
+        game_data["worker"][action_data["cashier"]]["status"] = WORKER_STATUS_WAITING_FOR_COMMAND
+        dequeue_customer()
+        new_notif.append("Pelanggan dilayani! Pelanggan telah membayar dan pergi dengan makanannya.")
         return
     if action["type"] == ACTION_TYPE_CUSTOMER_LEAVE:
         dequeue_customer()
         new_notif.append("Pelanggan pergi!")
+        return
 
 
 def schedule_action(action: dict) -> str:
@@ -510,13 +569,13 @@ def update_table() -> str:
         if not (chair_count - 2) < 0:
             table[f"table{i}"] = {
                 "capacity" : 2,
-                "customer" : {}
+                "customer" : []
             }
             chair_count -= 2
             continue
         table[f"table{i}"] = {
             "capacity" : 1,
-            "customer" : {}
+            "customer" : []
         }
         chair_count -= 1
     if game_data["furniture"]["table"] == 0 and 0 == game_data["furniture"]["chair"]:
@@ -588,34 +647,67 @@ Money: {dot_format(game_data["money"])}
 
 
 def cashier_desk() -> None:
+    global serving_cashier
     while True:
         print(
 f"""
 $> Meja Kasir <$
-Antrian: {len(customer_line)} Orang
+Antrian: {len(customer_line)} Orang 
 1 - Layani Pelanggan
-2 - Suruh Layani Pelanggan
+2 - {'Suruh Layani Pelanggan' if serving_cashier == None else 'Batalkan Perintah'}
 3 - Pesanan Menunggu
-4 - Back"""
+4 - Meja Pelanggan
+5 - Back"""
         )
-        pilihan = input_int_in_range("Masukkan pilihan: ", 1, 4)
+        pilihan = input_int_in_range("Masukkan pilihan: ", 1, 5)
         if pilihan == 1:
+            if not serving_cashier == None:
+                print("\nPelanggan sedang dilayani kasir.")
+                input("Enter...")
+                continue
             serve_customer()
         elif pilihan == 2:
             if not len(customer_line) > 0:
                 print("\nTidak ada yang mengantri.")
-                print("Enter...")
+                input("Enter...")
                 continue
             command_serve_customer()
+        elif pilihan == 3:
+            order()
         elif pilihan == 4:
+            print(
+"""
+.-. Meja .-.
+------------"""
+            )
+            if not len(table) > 0:
+                if game_data["furniture"]["table"] == 0 and 0 == game_data["furniture"]["chair"]:
+                    print("Tidak ada meja untuk ditampilkan.")
+                elif game_data["furniture"]["table"] > game_data["furniture"]["chair"]:
+                    print(f'Terdapat {game_data["furniture"]["table"]} meja tanpa adanya kursi.')
+                else:
+                    print(f'Terdapat {game_data["furniture"]["chair"]} kursi tanpa adanya meja.')
+                print("Tip: Meja dan kursi hanya bisa diatur sebelum memulai hari.")
+                input("Enter...")
+                continue
+            for t in range(len(table.keys())):
+                data = list(table.values())[t]
+                empty_chair = data["capacity"] - len(data["customer"])
+                if empty_chair > 0:
+                    print(f'- Meja {t + 1}: {empty_chair} Kursi Kosong.')
+                    continue
+                print(f'- Meja {t + 1}: Meja Penuh.')
+            input("Enter...")
+            continue
+        elif pilihan == 5:
             return
 
 
 def food_giver(text: str) -> dict:
-    foods: list = []
+    foods: dict = {}
     while True:
         food_ready = list(kitchen_data["food_ready"].keys())
-        if not len(foods) > 0:
+        if not len(foods.keys()) > 0:
             print(
 """
         ~|# Makanan #|~
@@ -628,19 +720,19 @@ O=============================O
             pilihan = input_int_in_range("Masukkan pilihan: ", 1, 2)
             if pilihan == 1:
                 if not len(food_ready) > 0:
-                    print("Belum ada makanan yang siap.")
+                    print("\nBelum ada makanan yang siap.")
                     input("Enter...")
                     continue
                 print()
                 for m in range(len(food_ready)):
                     print(f"{m + 1} - {kitchen_data['food_ready'][food_ready[m]]['display_name']}: {kitchen_data['food_ready'][food_ready[m]]['amount']}")
-                print(len(food_ready) + 1)
+                print(f'{len(food_ready) + 1} - Cancel')
                 pilihan_makanan = input_int_in_range("Masukkan pilihan: ", 1, len(food_ready) + 1)
                 if pilihan_makanan == len(food_ready) + 1:
                     continue
                 else:
                     kitchen_data["food_ready"][food_ready[pilihan_makanan - 1]]["amount"] -= 1
-                    foods.append({food_ready[pilihan_makanan - 1] : 1})
+                    foods[food_ready[pilihan_makanan - 1]] = 1
                     continue
             elif pilihan == 2:
                 return
@@ -648,14 +740,15 @@ O=============================O
             length: int = 0
             food_string = []
             for f in range(len(foods)):
-                food_name = list(foods[f].keys())[0]
+                food_name = list(foods.keys())[f]
                 food_string.append(
                     f'{f + 1} - {game_data["recipe"][food_name]["display_name"]}: {foods[food_name]}'
                 )
                 length = len(food_string[f]) if len(food_string[f]) > length else length
             length = length + ((length + 1) % 2)
             print(
-f"""  {" " * ((length - 15) / 2)}~|# Makanan #|~
+f"""
+  {" " * int((length - 15) / 2)}~|# Makanan #|~
 O={"=" * length}=O"""
             )
             for f in food_string:
@@ -669,17 +762,43 @@ f"""1 - Tambahkan Makanan
             )
             pilihan = input_int_in_range("Masukkan pilihan: ", 1, 4) 
             if pilihan == 1:
-                pass
+                if not len(food_ready) > 0:
+                    print("\nBelum ada makanan yang siap.")
+                    input("Enter...")
+                    continue
+                print()
+                for m in range(len(food_ready)):
+                    print(f"{m + 1} - {kitchen_data['food_ready'][food_ready[m]]['display_name']}: {kitchen_data['food_ready'][food_ready[m]]['amount']}")
+                print(f'{len(food_ready) + 1} - Cancel')
+                pilihan_makanan = input_int_in_range("Masukkan pilihan: ", 1, len(food_ready) + 1)
+                if pilihan_makanan == len(food_ready) + 1:
+                    continue
+                else:
+                    food_name = food_ready[pilihan_makanan - 1]
+                    if not kitchen_data["food_ready"][food_name]["amount"] > 0:
+                        print("\nMakanan tersebut habis.")
+                        input("Enter...")
+                        continue
+                    kitchen_data["food_ready"][food_name]["amount"] -= 1
+                    if food_name in foods:
+                        foods[food_name] += 1
+                        continue
+                    foods[food_name] = 1
+                    continue
+            elif pilihan == 2:
+                pilihan_makanan = input_int_in_range("Masukkan pilihan makanan: ", 1, len(food_string))
+                food_name = list(foods.keys())[pilihan_makanan - 1]
+                kitchen_data["food_ready"][food_name]["amount"] += 1
+                foods[food_name] -= 1
+                if not foods[food_name] > 0:
+                    foods.pop(food_name)
+                continue
+            elif pilihan == 3:
+                return foods
             elif pilihan == 4:
                 for f in foods:
-                    food_name = list(f.keys())[0]
-                    kitchen_data["food_ready"][food_name]["amount"] += f[food_name]
+                    kitchen_data["food_ready"][f]["amount"] += foods[f]
                 return
-            
-
-            
-        
-    
 
 
 def serve_customer() -> None:
@@ -700,19 +819,178 @@ Pesanan: - {game_data["recipe"][order[0]]["display_name"]}: {data["food"][order[
         print(
 f"""Makan di: {"sini" if data["eat_here"] else "bungkus"}
 Sisa kesabaran: {action_timer[data["action"]]["time"]} TURN
-1 - {"Catat Pesanan dan Antar ke Meja" if data["eat_here"] else "Terima Pembayaran dan Beri Makanan"}
-2 - Back"""
+1 - {"Catat Pesanan dan Antar ke Meja(-1 TURN)" if data["eat_here"] else "Terima Pembayaran dan Beri Makanan"}
+{"2 - Back" if not data["eat_here"] else "2 - Terima Pembayaran dan Beri Makanan(80% CUT)"}"""
         )
-        pilihan = input_int_in_range("Masukkan pilihan: ", 1, 2)
-        if pilihan == 1:
-            pass
-        elif pilihan == 2:
+        if data["eat_here"]:
+            print("3 - Back")
+        pilihan = input_int_in_range("Masukkan pilihan: ", 1, 3 if data["eat_here"] else 2)
+        if pilihan == 1 and data["eat_here"]:
+            table_available: bool = False
+            choosed_table: str = ''
+            if not len(table) > 0:
+                print("\nTidak ada meja atau tempat duduk.")
+                input("Enter...")
+                continue
+            for m in table.keys():
+                if len(table[m]["customer"]) < table[m]["capacity"]:
+                    choosed_table = m
+                    table_available = True
+                    break
+            if not table_available:
+                print("\nSemua meja penuh.")
+                input("Enter...")
+                continue
+            table[choosed_table]["customer"].append("a")
+            awaiting_order.append(
+                {
+                    "food" : data["food"],
+                    "table" : choosed_table
+                }
+            )
+            if customer_line[0]["action"] in action_timer:
+                action_timer.pop(customer_line[0]["action"])
+            dequeue_customer()
+            if not len(customer_line) > 0:
+                return
+            decrease_turn(1)
+            continue
+        elif pilihan == 1 and not data["eat_here"]:
+            food_give_data = food_giver("Berikan(-1 TURN)")
+            if food_give_data == None:
+                continue
+            if not food_give_data == data["food"]:
+                print("\nMakanan yang diberikan salah. Coba lagi.")
+                input("Enter...")
+                continue
+            for f in data["food"].keys():
+                game_data["money"] += game_data["recipe"][f]["cost"] * data["food"][f]
+                income.append(game_data["recipe"][f]["cost"] * data["food"][f])
+            if customer_line[0]["action"] in action_timer:
+                action_timer.pop(customer_line[0]["action"])
+            dequeue_customer()
+            if not len(customer_line) > 0:
+                return
+            continue
+        elif pilihan == 2 and data["eat_here"]:
+            food_give_data = food_giver("Berikan(-1 TURN)")
+            if food_give_data == None:
+                continue
+            if not food_give_data == data["food"]:
+                print("\nMakanan yang diberikan salah. Coba lagi.")
+                input("Enter...")
+                continue
+            for f in data["food"].keys():
+                game_data["money"] += game_data["recipe"][f]["cost"] * data["food"][f] * (80 / 100)
+                income.append(game_data["recipe"][f]["cost"] * data["food"][f] * (80 / 100)) 
+            if customer_line[0]["action"] in action_timer:
+                action_timer.pop(customer_line[0]["action"])
+            dequeue_customer()
+            if not len(customer_line) > 0:
+                return
+            continue
+        elif (pilihan == 3 and data["eat_here"]) or (pilihan == 2 and not data["eat_here"]):
             return
 
 
 
 def command_serve_customer() -> None:
-    pass
+    global serving_cashier
+    if not serving_cashier == None:
+        game_data["worker"][serving_cashier]["status"] = WORKER_STATUS_WAITING_FOR_COMMAND
+        action_timer.pop(game_data["worker"][serving_cashier]["action"])
+        action_timer[customer_line[0]["action"]]["time"] -= 1
+        serving_cashier = None
+        return
+    cashier_available: bool = False
+    cashier: str = ''
+    for w in game_data["worker"].keys():
+        if game_data["worker"][w]["type"] == WORKER_TYPE_CASHIER and game_data["worker"][w]["status"] == WORKER_STATUS_WAITING_FOR_COMMAND:
+            cashier_available = True
+            cashier = w
+            break
+    if not cashier_available:
+        print("\nTidak ada kasir yang tersedia.")
+        input("Enter...")
+        return
+    serving_cashier = cashier
+    action_timer[customer_line[0]["action"]]["time"] += 1
+    game_data["worker"][cashier]["status"] = WORKER_STATUS_WORKING
+    game_data["worker"][cashier]["action"] = schedule_action(
+        {
+            "type" : ACTION_TYPE_CUSTOMER_SERVED,
+            "time" : 1,
+            "action_data" : {
+                "customer" : customer_line[0],
+                "cashier" : cashier
+            }
+        }
+    )
+    
+    
+
+def order() -> None:
+    while True:
+        if not len(awaiting_order) > 0:
+            print("\nBelum ada pesanan.")
+            input("Enter...")
+            return
+        print("\n#! Pesanan !#")
+        for o in range(len(awaiting_order)):
+            print(f'{o + 1} - Pesanan {o + 1}')
+        print(f'{len(awaiting_order) + 1} - Back')
+        pilihan = input_int_in_range("Masukkan pilihan: ", 1, len(awaiting_order) + 1)
+        if pilihan == len(awaiting_order) + 1:
+            return
+        else:
+            print(f"\nPesanan {pilihan}")
+            length = 0
+            for f, a in awaiting_order[pilihan - 1]["food"].items():
+                food_order_string = f'- {game_data["recipe"][f]["display_name"]}: {a}'
+                length = max(len(food_order_string), length)
+                print(food_order_string)
+            print('-' * (length + 1))
+            print(
+"""1 - Antar Makanan
+2 - Back"""
+            )
+            pilihan_user = input_int_in_range("Masukkan pilihan: ", 1, 2)
+            if pilihan_user == 1:
+                can_serve_food(pilihan - 1)
+                if not len(awaiting_order) > 0:
+                    return
+                continue
+            elif pilihan_user == 2:
+                continue
+
+
+def can_serve_food(order: int) -> None:
+    food_available = True
+    for f in awaiting_order[order]["food"].keys():
+        if not f in kitchen_data["food_ready"]:
+            food_available = False
+            break
+        if kitchen_data["food_ready"][f]["amount"] < awaiting_order[order]["food"][f]:
+            food_available = False
+            break
+        kitchen_data["food_ready"][f]["amount"] -= awaiting_order[order]["food"][f]
+        if not kitchen_data["food_ready"][f]["amount"] > 0:
+            kitchen_data["food_ready"].pop(f)
+        cost = awaiting_order[order]["food"][f] * game_data["recipe"][f]["cost"]
+        game_data["money"] += cost
+        income.append(cost)
+    if not food_available:
+        print("\nMakanan kurang.")
+        input("Enter..")
+        return
+    schedule_action(
+        {
+            "action_data" : awaiting_order[order]["table"],
+            "type" : ACTION_TYPE_CUSTOMER_FINISHED_EATING,
+            "time" : randint(1, 2)
+        }
+    )
+    awaiting_order.pop(order)
 
 
 def notification() -> None:
@@ -745,6 +1023,8 @@ def day_end() -> None:
     customer_line.clear()
     read_notif.clear()
     unread_notif.clear()
+    new_notif.clear()
+    awaiting_order.clear()
     kitchen_data["food_ready"].clear()
     for w in game_data["worker"]:
         game_data["worker"][w]["status"] = WORKER_STATUS_SLEEPING
@@ -788,14 +1068,14 @@ f"""
     print(f'|              {"-" * length} + |')
     sleep(reveal_delay)
     print(f"|              {' ' * (length - len(dot_format(income_total)))}{dot_format(income_total)}   |")
-    print(f"| Pengeluaran: {f'{" " * (length - len(dot_format(outcome[0])))}{dot_format(outcome[0])}' if len(outcome) > 0 else f'{" " * (length - 1)}0'}   |")
+    print(f"""| Pengeluaran: {f'{" " * (length - len(dot_format(outcome[0])))}{dot_format(outcome[0])}' if len(outcome) > 0 else f'{" " * (length - 1)}0'}   |""")
     for o in range(len(outcome) - 1):
         sleep(reveal_delay)
         print(f"|              {' ' * (length - len(dot_format(outcome[i])))}{dot_format(outcome[i])}   |")
     print(f'|              {"-" * length} - |')
     sleep(reveal_delay)
     print(f"| PROFIT:      {' ' * (length - len(dot_format(total)))}{dot_format(total)}   |")
-    print(f"+--------------{"-" * length}---+")
+    print(f"+--------------{'-' * length}---+")
     input("Enter...")
     income.clear()
     outcome.clear()
@@ -885,7 +1165,7 @@ Nasi: {get_unit_formatted(kitchen_data["nasi"], "cooked_rice_capacity")}
                     break
             if chef_available:
                 continue
-            print("Semua chef sedang sibuk.")
+            print("\nSemua chef sedang sibuk.")
             input("Enter...")
         elif pilihan == 3:
             cancel_command_cook()
@@ -909,7 +1189,7 @@ def cancel_command_cook() -> None:
             if action_timer[a]["type"] == ACTION_TYPE_FOOD_READY:
                 cook_commands.append(a)
         if len(cook_commands) <= 0:
-            print("Tidak ada yang sedang masak.")
+            print("\nTidak ada yang sedang masak.")
             input("Enter...")
             return
         print("\n!> Batalkan Perintah Masak <!")
@@ -946,14 +1226,14 @@ def cook() -> None:
         for m in game_data["recipe"][recipes[pilihan - 1]]["material"]:
             if not m == "nasi":
                 if game_data["stock"][m]["amount"] < game_data["recipe"][recipes[pilihan - 1]]["material"][m]["amount"]:
-                    print("Bahan-Bahan kurang.")
+                    print("\nBahan-Bahan kurang.")
                     input("Enter...")
                     material_available = False
                     break
                 game_data["stock"][m]["amount"] -= game_data["recipe"][recipes[pilihan - 1]]["material"][m]["amount"]
                 continue
             if kitchen_data["nasi"] < game_data["recipe"][recipes[pilihan - 1]]["material"][m]["amount"]:
-                print("Bahan-Bahan kurang.")
+                print("\nBahan-Bahan kurang.")
                 input("Enter...")
                 material_available = False
                 break
@@ -993,14 +1273,14 @@ def command_cook(chef: str) -> None:
         for m in game_data["recipe"][recipes[pilihan - 1]]["material"]:
             if not m == "nasi":
                 if game_data["stock"][m]["amount"] < game_data["recipe"][recipes[pilihan - 1]]["material"][m]["amount"]:
-                    print("Bahan-Bahan kurang.")
+                    print("\nBahan-Bahan kurang.")
                     input("Enter...")
                     material_available = False
                     break
                 game_data["stock"][m]["amount"] -= game_data["recipe"][recipes[pilihan - 1]]["material"][m]["amount"]
                 continue
             if kitchen_data["nasi"] < game_data["recipe"][recipes[pilihan - 1]]["material"][m]["amount"]:
-                print("Bahan-Bahan kurang.")
+                print("\nBahan-Bahan kurang.")
                 input("Enter...")
                 material_available = False
                 break
@@ -1080,7 +1360,7 @@ Money: {dot_format(game_data["money"])}
             if not turn == -1:
                 decrease_turn(1)
             if game_data["money"] < cost:
-                print("Uang tidak cukup.")
+                print("\nUang tidak cukup.")
                 input("Enter...")
                 return
             game_data["money"] -= cost
@@ -1186,13 +1466,14 @@ def specific_worker(worker: str) -> None:
     print(game_data["worker"][worker])
     while True:
         status = game_data["worker"][worker]["status"]
+        worker_type = game_data["worker"][worker]["type"]
         print(
 f"""
 {worker.capitalize()}
 {"=" * len(worker) * 2}
 Deskripsi: {game_data["worker"][worker]["description"]}
-{"Kecepatan Memasak" if game_data["worker"][worker]["type"] == WORKER_TYPE_CHEF else "Kecepatan Melayani"}: {game_data["worker"][worker]["speed"]} TURN
-Status: {"Tidur" if status == WORKER_STATUS_SLEEPING else ("Menunggu perintah" if status == WORKER_STATUS_WAITING_FOR_COMMAND else "Memasak")}
+{"Kecepatan Memasak" if worker_type == WORKER_TYPE_CHEF else "Kecepatan Melayani"}: {game_data["worker"][worker]["speed"]} TURN
+Status: {"Tidur" if status == WORKER_STATUS_SLEEPING else ("Menunggu perintah" if status == WORKER_STATUS_WAITING_FOR_COMMAND else ("Memasak" if worker_type == WORKER_TYPE_CHEF else "Melayani Pelanggan"))}
 {"=" * len(worker) * 2}"""
         )
         print(
@@ -1207,15 +1488,24 @@ Status: {"Tidur" if status == WORKER_STATUS_SLEEPING else ("Menunggu perintah" i
             for i in game_data["worker"].keys():
                 if game_data["worker"][i]["type"] == WORKER_TYPE_CHEF:
                     chef_count += 1
-            if not chef_count > 1 and game_data["worker"][worker]["type"] == WORKER_TYPE_CHEF:
-                print("Tidak bisa memecat chef jika chef hanya 1.")
+            if not chef_count > 1 and worker_type == WORKER_TYPE_CHEF:
+                print("\nTidak bisa memecat chef jika chef hanya 1.")
                 input("Enter...")
                 continue
             if status == WORKER_STATUS_WORKING:
+                text: str 
+                if worker_type == WORKER_TYPE_CHEF:
+                    text = f'Chef ini sedang memasak {action_timer[game_data["worker"][worker]["action"]]["action_data"]["food_data"]["display_name"]}. Apakah kamu yakin?(y/n): '
+                elif worker_type == WORKER_TYPE_CASHIER:
+                    text = "Kasir ini sedang melayani pelanggan. Apakah kamu yakin?(y/n): "
                 while True:
-                    user_input = input(f'Chef ini sedang memasak {action_timer[game_data["worker"][worker]["action"]]["action_data"]["food_data"]["display_name"]}. Apakah kamu yakin?(y/n): ')
+                    user_input = input(text)
                     if user_input.lower() == "y":
                         action_timer.pop(game_data["worker"][worker]["action"])
+                        if worker_type == WORKER_TYPE_CASHIER:
+                            global serving_cashier
+                            action_timer[customer_line[0]["action"]]["time"] -= 1
+                            serving_cashier = None
                         game_data["worker"].pop(worker)
                         return
                     if user_input.lower() == "n":
